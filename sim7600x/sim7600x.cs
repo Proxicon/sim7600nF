@@ -16,6 +16,7 @@ namespace sim7600x
         private string _lastResult = "";
         private readonly string _apn;
         private int _failures = 0;
+        private bool _isConnected = false;
 
         // GPIO init
         //private readonly GpioPin _batteryStatus; // Pin 35 for battery status, only works when not on USB aka, running on battery
@@ -37,19 +38,13 @@ namespace sim7600x
         // public int pwkkey;
         // public int rstkey;
         // public int poweronkey;
-        public sim7600(string apn, string portName, int pwkkey = 4, int flight = 25, int ledpin = 12)
+        public sim7600(string apn, string portName, int pwkkey, int flight, int ledpin)
         {
             _apn = apn;
-
-            // Turns on the chip
-            if (pwkkey > 0)
-            {
-                _MODEM_PWRKEY = new GpioController().OpenPin(pwkkey);
-                _MODEM_PWRKEY.SetPinMode(PinMode.Output);
-                _MODEM_PWRKEY.Write(PinValue.High);
-                Thread.Sleep(300);
-                _MODEM_PWRKEY.Write(PinValue.Low);
-            }
+            
+            // init led & turn it off
+            _ledPower = new GpioController().OpenPin(ledpin, PinMode.Output);
+            _ledPower.Write(PinValue.Low);
 
             // Enable GPS for recieving AT commands
 
@@ -63,6 +58,7 @@ namespace sim7600x
             {
                 _MODEM_FLIGHT = new GpioController().OpenPin(flight);
                 _MODEM_FLIGHT.SetPinMode(PinMode.Output);
+                Debug.WriteLine($"Flight::{_MODEM_FLIGHT.Read()}");
                 _MODEM_FLIGHT.Write(PinValue.High);
             }
 
@@ -73,19 +69,52 @@ namespace sim7600x
 
             _serial.Open();
 
-            /* allow modem to wake well and to be ready for use */
-            Thread.Sleep(10000);
+            /*
+            Turns on the chip, SIM chip stays online after flashing new firmware delaying the startup sequence
+            we add a check first to see if the network is connected before turning it off and back on
+            */
 
-            /* indicate modem can be controlled*/
-            _ledPower = new GpioController().OpenPin(ledpin,PinMode.Output);
-            _ledPower.Toggle();
+            // check automatice time & timezome update setting
+            AutomaticTimeandTimezoneUpdate();
 
+            // check connectivity state
+            bool isConnected = NetworkisConnected();
+
+            if (isConnected)
+            {
+                Debug.WriteLine("Modem is connected to network, no need to cycle power...");
+
+                /* indicate modem can be controlled*/
+                _ledPower.Toggle();
+            }
+            else
+            {
+                Debug.WriteLine("Modem network connection not detected, cycling chip power..");
+
+                if (pwkkey > 0)
+                {
+                    _MODEM_PWRKEY = new GpioController().OpenPin(pwkkey);
+                    _MODEM_PWRKEY.SetPinMode(PinMode.Output);
+                    _MODEM_PWRKEY.Write(PinValue.High);
+                    Thread.Sleep(300);
+                    _MODEM_PWRKEY.Write(PinValue.Low);
+
+                    /* allow modem to wake well and to be ready for use */
+                    Thread.Sleep(10000);
+
+                    /* indicate modem can be controlled*/
+                    _ledPower.Toggle();
+                }
+            }
         }
 
         public void SimCheck()
         {
             int restartCounter = 5;
             int atAttempts = 0;
+
+            SendCommand("AT\r", true); //Echo OFF
+
             while (_lastResult.IndexOf("OK") < 0)
             {
                 if(atAttempts > restartCounter)
@@ -225,328 +254,6 @@ namespace sim7600x
             }*/
         }
 
-
-        public void ipko(string url)
-        {
-            SendCommand("AT+CREG?\r\n", true);
-            SendEndOfDataCommand();
-
-            SendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=3,1,\"APN\",\"IPKO\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=3,1,\"USER\",\"\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=2,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+CLBS=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+CLTS?\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(10000);
-            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(15000);
-            SendCommand("AT+CIPGSMLOC=2,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(500);
-            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(15000);
-            //SendCommand("AT+SAPBR=0,1\r\n", true);
-            //SendEndOfDataCommand();
-            //Thread.Sleep(100);
-            SendCommand("AT+HTTPINIT\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            // SendCommand("AT+HTTPPARA=\"PROIP\",\"213.229.249.40\"\r\n", true);
-            // SendEndOfDataCommand();
-            // Thread.Sleep(100);
-            // SendCommand("AT+HTTPPARA=\"PROPORT\",\"8080\"\r\n", true);
-            // SendEndOfDataCommand();
-            // Thread.Sleep(100);
-            //SendCommand("AT+HTTPSSL=1\r\n", true);
-            //SendEndOfDataCommand();
-            //Thread.Sleep(100);
-            SendCommand("AT+HTTPPARA=\"CID\",1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+HTTPACTION=0\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(10000);
-            //SendCommand("AT+HTTPREAD=0,28\r\n", true);
-            SendCommand("AT+HTTPREAD\r\n", true);
-            SendEndOfDataCommand();
-
-            //Thread.Sleep(100);
-            //SendEndOfDataCommand();
-            //SendCommand("AT+HTTPTERM\r\n", true);
-            //Thread.Sleep(100);
-            //https://www.ipko.com/en/faq/si-te-konfiguroj-roaming-ne-telefon/
-
-        }
-        public void http(string url)
-        {
-            var connectAttempts = 1;
-            var errorOccurred = false;
-
-            // _serial.;
-            //Debug.WriteLine("Step 1 - HTTP INIT");
-            SendCommand("AT+HTTPINIT\r\n", true);
-
-            Debug.WriteLine(_lastResult);
-
-            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
-            {
-                _serialDataFinished.WaitOne(5000, false);
-                connectAttempts++;
-            }
-
-            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
-            {
-                SendCommand("AT+CIPSTATUS\r\n", true);
-                Thread.Sleep(1000);
-
-                if (_lastResult.IndexOf("ERROR") > 0)
-                {
-                    SendCommand("AT+HTTPTERM\r\n", true);
-
-                    HandleFailure();
-
-                    http(url);
-
-                    errorOccurred = true;
-                }
-
-                if (!errorOccurred)
-                {
-                    Debug.WriteLine("Step 2 - ");
-                    Thread.Sleep(500);
-                    SendCommand("AT+HTTPINIT\r\n", true);
-                    Thread.Sleep(400);
-                    Debug.WriteLine("HTTP PARA CID");
-                    SendCommand("AT+HTTPPARA=\"CID\",1\r\n", true);
-                    Thread.Sleep(400);
-                    Debug.WriteLine("HTTP URL");
-                    SendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"\r\n", true);
-                    //http://exploreembedded.com/wiki/images/1/15/Hello.txt
-                    Thread.Sleep(400);
-                    Debug.WriteLine("HTTP ACTION");
-                    SendCommand("AT+HTTPACTION=0\r\n", true);
-                    Thread.Sleep(400);
-                    Debug.WriteLine("HTTP READ");
-                    SendCommand("AT+HTTPREAD\r\n", true);
-                    Thread.Sleep(400);
-                    //_serial.Flush();
-
-                    SendEndOfDataCommand();
-
-                    _serialDataFinished.WaitOne(5000, false);
-
-                    SendCommand("AT+HTTPTERM\r\n", true);
-                    Thread.Sleep(400);
-
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        SendCommand("AT+HTTPTERM\r\n", true);
-
-                        HandleFailure();
-
-                        http(url);
-                    }
-                    else
-                    {
-                        _failures = 0;
-                    }
-                }
-            }
-            else
-            {
-                Debug.WriteLine("Error on open connection.  Re-initializing.");
-
-                HandleFailure();
-
-                http(url);
-            }
-        }
-        public void Get(string host, int port, string page, string contentType, string data)
-        {
-            var connectAttempts = 1;
-            var errorOccurred = false;
-
-            // _serial.;
-
-            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
-
-            Debug.WriteLine(_lastResult);
-
-            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
-            {
-                _serialDataFinished.WaitOne(5000, false);
-                connectAttempts++;
-            }
-
-            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
-            {
-                SendCommand("AT+CIPSTATUS\r", true);
-                Thread.Sleep(1000);
-                SendCommand("AT+CIPSEND\r", true);
-
-                if (_lastResult.IndexOf("ERROR") > 0)
-                {
-                    HandleFailure();
-
-                    Get(host, port, page, contentType, data);
-
-                    errorOccurred = true;
-                }
-
-                if (!errorOccurred)
-                {
-                    Thread.Sleep(500);
-
-                    SendCommand("GET " + page + " HTTP/1.1\r\n");
-                    SendCommand("Host: " + host + "\r\n");
-                    SendCommand("Content-Length: " + data.Length + "\r\n");
-                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
-                    SendCommand(data + "\r");
-
-                    //_serial.Flush();
-
-                    SendEndOfDataCommand();
-
-                    _serialDataFinished.WaitOne(5000, false);
-
-                    SendCommand("AT+CIPCLOSE\r", true);
-
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        HandleFailure();
-
-                        Get(host, port, page, contentType, data);
-                    }
-                    else
-                    {
-                        _failures = 0;
-                    }
-                }
-            }
-            else
-            {
-                Debug.WriteLine("Error on open connection.  Re-initializing.");
-
-                HandleFailure();
-
-                Get(host, port, page, contentType, data);
-            }
-        }
-        public void Post(string host, int port, string page, string contentType, string data)
-        {
-            var connectAttempts = 1;
-            var errorOccurred = false;
-
-            // _serial.;
-
-            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
-
-            Debug.WriteLine(_lastResult);
-
-            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
-            {
-                _serialDataFinished.WaitOne(5000, false);
-                connectAttempts++;
-            }
-
-            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
-            {
-                SendCommand("AT+CIPSTATUS\r", true);
-                Thread.Sleep(1000);
-                SendCommand("AT+CIPSEND\r", true);
-
-                if (_lastResult.IndexOf("ERROR") > 0)
-                {
-                    HandleFailure();
-
-                    Post(host, port, page, contentType, data);
-
-                    errorOccurred = true;
-                }
-
-                if (!errorOccurred)
-                {
-                    Thread.Sleep(500);
-
-                    SendCommand("POST " + page + " HTTP/1.1\r\n");
-                    SendCommand("Host: " + host + "\r\n");
-                    SendCommand("Content-Length: " + data.Length + "\r\n");
-                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
-                    SendCommand(data + "\r");
-
-                    //_serial.Flush();
-
-                    SendEndOfDataCommand();
-
-                    _serialDataFinished.WaitOne(5000, false);
-
-                    SendCommand("AT+CIPCLOSE\r", true);
-
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        HandleFailure();
-
-                        Post(host, port, page, contentType, data);
-                    }
-                    else
-                    {
-                        _failures = 0;
-                    }
-                }
-            }
-            else
-            {
-                Debug.WriteLine("Error on open connection.  Re-initializing.");
-
-                HandleFailure();
-
-                Post(host, port, page, contentType, data);
-            }
-        }
-
-        private void HandleFailure()
-        {
-            _failures++;
-
-            Debug.WriteLine("Failures: " + _failures);
-
-            if (_failures % 2 == 0)
-            {
-                SendCommand("AT+CIPSHUT\r", true);
-
-                InitializeModem();
-            }
-            else
-            {
-                SendCommand("AT+CIPCLOSE\r", true);
-            }
-
-            //Sleep for a second allowing events to process to hopefully sync up the serial data communication
-            for (int i = 1; i <= 10; i++)
-            {
-                Thread.Sleep(100);
-            }
-        }
-
         public void SendCommand(string command, bool waitForResponse = false, int timeout = 1000)
         {
             Debug.WriteLine($"AT+Comm = [{command}]\r");
@@ -578,7 +285,6 @@ namespace sim7600x
 
             Debug.WriteLine(_lastResult);
         }
-
 
         public void Test()
         {
@@ -613,8 +319,23 @@ namespace sim7600x
         {
             Debug.WriteLine("----------------(AutomaticTimeandTimezoneUpdate)----------------");
 
-            SendCommand("AT+CTZU=1\r", true);
+            // Test command
+            SendCommand("AT+CTZU=?\r", true);
             SendEndOfDataCommand();
+
+            // Read Command
+            SendCommand("AT+CTZU?\r", true);
+            if (_lastResult.IndexOf("+CTZU: 1") >= 0)
+            {
+                Debug.WriteLine("NO Need to update CTZU, already set to 1");
+                SendEndOfDataCommand();
+            }
+            else
+            {
+                // Write Command
+                SendCommand("AT+CTZU=1\r", true);
+                SendEndOfDataCommand();
+            }
         }
 
         public void ReadtheVoltageValueOfThePowerSupply()
@@ -633,11 +354,19 @@ namespace sim7600x
 
             // Read Command
             SendCommand("AT+CGNSSMODE?\r", true);
-            SendEndOfDataCommand();
 
-            // Write Command
-            SendCommand("AT+CGNSSMODE=1,1\r", true);
-            SendEndOfDataCommand();
+            // Only trigger write action if the setting is not 1,1
+            if (_lastResult.IndexOf("+CGNSSMODE: 1,1") > 0)
+            {
+                Debug.WriteLine("+CGNSSMODE: 1,1 detected, no need to trigger write");
+                SendEndOfDataCommand();
+
+            }else
+            {
+                // Write Command
+                SendCommand("AT+CGNSSMODE=1,1\r", true);
+                SendEndOfDataCommand();
+            }
         }
 
         public void StartStopGpsSession(int State = 1)
@@ -650,13 +379,21 @@ namespace sim7600x
 
             // Read Command
             SendCommand("AT+CGPS?\r", true);
-            SendEndOfDataCommand();
 
-            // Write Command
-            SendCommand("AT+CGPS=1,1\r", true);
-            SendEndOfDataCommand();
+            // Only trigger write action if the setting is not 1,1
+            if(_lastResult.IndexOf("+CGPS: 1,1") > 0)
+            {
+                Debug.WriteLine($"No need to set detected +CGPS: 1,1 ");
+                SendEndOfDataCommand();
+            }
+            else
+            {
+                // Write Command
+                SendCommand("AT+CGPS=1,1\r", true);
+                SendEndOfDataCommand();
 
-            Thread.Sleep(5000);
+                Thread.Sleep(5000);
+            }
         }
 
 
@@ -854,25 +591,27 @@ namespace sim7600x
 
             SendCommand("AT+CEREG\r", true);
             SendEndOfDataCommand();
-
-            if (_lastResult.IndexOf("3") >= 0)
+            SendCommand("AT+CEREG?\r", true);
+            if (_lastResult.IndexOf("1") >= 0)
             {
                 Debug.WriteLine("EPS registration for LTE modules detected..");
                 isConnected = true;
             }
 
-            SendCommand("AT+CGREG\r", true);
+            
+            SendCommand("AT+CGREG?\r", true);
             SendEndOfDataCommand();
-
+            SendCommand("AT+CGREG?\r", true);
             if (_lastResult.IndexOf("2") >= 0)
             {
                 Debug.WriteLine("GPRS service registration detected...");
                 isConnected = true;
             }
 
+
             SendCommand("AT+CREG\r", true);
             SendEndOfDataCommand();
-
+            SendCommand("AT+CREG?\r", true);
             if (_lastResult.IndexOf("1") >= 0)
             {
                 Debug.WriteLine("Generic network registration detected...");
@@ -896,14 +635,29 @@ namespace sim7600x
             }
 
             SendCommand("AT+NETOPEN?\r", true);
-            SendEndOfDataCommand();
-
             if (_lastResult.IndexOf("NETOPEN: 1") >= 0)
             {
                 Debug.WriteLine("Detected NETOPEN: 1");
+                SendEndOfDataCommand();
+            }
+            
+            GetIPaddressOfPDPContext();
+        }
+
+        public bool NetworkisConnected()
+        {
+            Debug.WriteLine("----------------(Check if NetworkisConnected)----------------");
+
+            SendCommand("AT+NETOPEN?\r", true);
+            if (_lastResult.IndexOf("NETOPEN: 1") >= 0)
+            {
+                Debug.WriteLine("Detected NETOPEN: 1");
+                SendEndOfDataCommand();
+
+                _isConnected = true;
             }
 
-            GetIPaddressOfPDPContext();
+            return true;
         }
 
         public void GetIPaddressOfPDPContext()
@@ -946,19 +700,15 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
-        public void Model()
-        {
-            ebug.WriteLine("----------------(Model)----------------");
-
-            SendCommand("AT+GMM\r", true);
-            SendEndOfDataCommand();
-        }
         public void About()
         {
             Debug.WriteLine("----------------(About)----------------");
 
             SendCommand("AT+GMI\r", true);
             SendEndOfDataCommand();
+
+            RequestModelIdentification();
+            Firmware();
         }
 
         public void Location()
@@ -1041,6 +791,330 @@ namespace sim7600x
             SendCommand("AT+CMGF=1\r", true);
             SendCommand("AT+CMDA=\"DEL ALL\"\r", true);
             SendEndOfDataCommand();
+        }
+
+        public void ipko(string url)
+        {
+            SendCommand("AT+CREG?\r\n", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\"\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+SAPBR=3,1,\"APN\",\"IPKO\"\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+SAPBR=3,1,\"USER\",\"\"\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+SAPBR=1,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+SAPBR=2,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+CLBS=1,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+CLTS?\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(10000);
+            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(15000);
+            SendCommand("AT+CIPGSMLOC=2,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(500);
+            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(15000);
+            //SendCommand("AT+SAPBR=0,1\r\n", true);
+            //SendEndOfDataCommand();
+            //Thread.Sleep(100);
+            SendCommand("AT+HTTPINIT\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            // SendCommand("AT+HTTPPARA=\"PROIP\",\"213.229.249.40\"\r\n", true);
+            // SendEndOfDataCommand();
+            // Thread.Sleep(100);
+            // SendCommand("AT+HTTPPARA=\"PROPORT\",\"8080\"\r\n", true);
+            // SendEndOfDataCommand();
+            // Thread.Sleep(100);
+            //SendCommand("AT+HTTPSSL=1\r\n", true);
+            //SendEndOfDataCommand();
+            //Thread.Sleep(100);
+            SendCommand("AT+HTTPPARA=\"CID\",1\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(100);
+            SendCommand("AT+HTTPACTION=0\r\n", true);
+            SendEndOfDataCommand();
+            Thread.Sleep(10000);
+            //SendCommand("AT+HTTPREAD=0,28\r\n", true);
+            SendCommand("AT+HTTPREAD\r\n", true);
+            SendEndOfDataCommand();
+
+            //Thread.Sleep(100);
+            //SendEndOfDataCommand();
+            //SendCommand("AT+HTTPTERM\r\n", true);
+            //Thread.Sleep(100);
+            //https://www.ipko.com/en/faq/si-te-konfiguroj-roaming-ne-telefon/
+
+        }
+
+        public void http(string url)
+        {
+            var connectAttempts = 1;
+            var errorOccurred = false;
+
+            // _serial.;
+            //Debug.WriteLine("Step 1 - HTTP INIT");
+            SendCommand("AT+HTTPINIT\r\n", true);
+
+            Debug.WriteLine(_lastResult);
+
+            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
+            {
+                _serialDataFinished.WaitOne(5000, false);
+                connectAttempts++;
+            }
+
+            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
+            {
+                SendCommand("AT+CIPSTATUS\r\n", true);
+                Thread.Sleep(1000);
+
+                if (_lastResult.IndexOf("ERROR") > 0)
+                {
+                    SendCommand("AT+HTTPTERM\r\n", true);
+
+                    HandleFailure();
+
+                    http(url);
+
+                    errorOccurred = true;
+                }
+
+                if (!errorOccurred)
+                {
+                    Debug.WriteLine("Step 2 - ");
+                    Thread.Sleep(500);
+                    SendCommand("AT+HTTPINIT\r\n", true);
+                    Thread.Sleep(400);
+                    Debug.WriteLine("HTTP PARA CID");
+                    SendCommand("AT+HTTPPARA=\"CID\",1\r\n", true);
+                    Thread.Sleep(400);
+                    Debug.WriteLine("HTTP URL");
+                    SendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"\r\n", true);
+                    //http://exploreembedded.com/wiki/images/1/15/Hello.txt
+                    Thread.Sleep(400);
+                    Debug.WriteLine("HTTP ACTION");
+                    SendCommand("AT+HTTPACTION=0\r\n", true);
+                    Thread.Sleep(400);
+                    Debug.WriteLine("HTTP READ");
+                    SendCommand("AT+HTTPREAD\r\n", true);
+                    Thread.Sleep(400);
+                    //_serial.Flush();
+
+                    SendEndOfDataCommand();
+
+                    _serialDataFinished.WaitOne(5000, false);
+
+                    SendCommand("AT+HTTPTERM\r\n", true);
+                    Thread.Sleep(400);
+
+                    if (_lastResult.IndexOf("ERROR") > 0)
+                    {
+                        SendCommand("AT+HTTPTERM\r\n", true);
+
+                        HandleFailure();
+
+                        http(url);
+                    }
+                    else
+                    {
+                        _failures = 0;
+                    }
+                }
+            }
+            else
+            {
+                Debug.WriteLine("Error on open connection.  Re-initializing.");
+
+                HandleFailure();
+
+                http(url);
+            }
+        }
+
+        public void Get(string host, int port, string page, string contentType, string data)
+        {
+            var connectAttempts = 1;
+            var errorOccurred = false;
+
+            // _serial.;
+
+            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
+
+            Debug.WriteLine(_lastResult);
+
+            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
+            {
+                _serialDataFinished.WaitOne(5000, false);
+                connectAttempts++;
+            }
+
+            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
+            {
+                SendCommand("AT+CIPSTATUS\r", true);
+                Thread.Sleep(1000);
+                SendCommand("AT+CIPSEND\r", true);
+
+                if (_lastResult.IndexOf("ERROR") > 0)
+                {
+                    HandleFailure();
+
+                    Get(host, port, page, contentType, data);
+
+                    errorOccurred = true;
+                }
+
+                if (!errorOccurred)
+                {
+                    Thread.Sleep(500);
+
+                    SendCommand("GET " + page + " HTTP/1.1\r\n");
+                    SendCommand("Host: " + host + "\r\n");
+                    SendCommand("Content-Length: " + data.Length + "\r\n");
+                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
+                    SendCommand(data + "\r");
+
+                    //_serial.Flush();
+
+                    SendEndOfDataCommand();
+
+                    _serialDataFinished.WaitOne(5000, false);
+
+                    SendCommand("AT+CIPCLOSE\r", true);
+
+                    if (_lastResult.IndexOf("ERROR") > 0)
+                    {
+                        HandleFailure();
+
+                        Get(host, port, page, contentType, data);
+                    }
+                    else
+                    {
+                        _failures = 0;
+                    }
+                }
+            }
+            else
+            {
+                Debug.WriteLine("Error on open connection.  Re-initializing.");
+
+                HandleFailure();
+
+                Get(host, port, page, contentType, data);
+            }
+        }
+
+        public void Post(string host, int port, string page, string contentType, string data)
+        {
+            var connectAttempts = 1;
+            var errorOccurred = false;
+
+            // _serial.;
+
+            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
+
+            Debug.WriteLine(_lastResult);
+
+            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
+            {
+                _serialDataFinished.WaitOne(5000, false);
+                connectAttempts++;
+            }
+
+            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
+            {
+                SendCommand("AT+CIPSTATUS\r", true);
+                Thread.Sleep(1000);
+                SendCommand("AT+CIPSEND\r", true);
+
+                if (_lastResult.IndexOf("ERROR") > 0)
+                {
+                    HandleFailure();
+
+                    Post(host, port, page, contentType, data);
+
+                    errorOccurred = true;
+                }
+
+                if (!errorOccurred)
+                {
+                    Thread.Sleep(500);
+
+                    SendCommand("POST " + page + " HTTP/1.1\r\n");
+                    SendCommand("Host: " + host + "\r\n");
+                    SendCommand("Content-Length: " + data.Length + "\r\n");
+                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
+                    SendCommand(data + "\r");
+
+                    //_serial.Flush();
+
+                    SendEndOfDataCommand();
+
+                    _serialDataFinished.WaitOne(5000, false);
+
+                    SendCommand("AT+CIPCLOSE\r", true);
+
+                    if (_lastResult.IndexOf("ERROR") > 0)
+                    {
+                        HandleFailure();
+
+                        Post(host, port, page, contentType, data);
+                    }
+                    else
+                    {
+                        _failures = 0;
+                    }
+                }
+            }
+            else
+            {
+                Debug.WriteLine("Error on open connection.  Re-initializing.");
+
+                HandleFailure();
+
+                Post(host, port, page, contentType, data);
+            }
+        }
+
+        private void HandleFailure()
+        {
+            _failures++;
+
+            Debug.WriteLine("Failures: " + _failures);
+
+            if (_failures % 2 == 0)
+            {
+                SendCommand("AT+CIPSHUT\r", true);
+
+                InitializeModem();
+            }
+            else
+            {
+                SendCommand("AT+CIPCLOSE\r", true);
+            }
+
+            //Sleep for a second allowing events to process to hopefully sync up the serial data communication
+            for (int i = 1; i <= 10; i++)
+            {
+                Thread.Sleep(100);
+            }
         }
     }
 }

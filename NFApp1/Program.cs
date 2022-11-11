@@ -37,16 +37,19 @@ namespace Sim7600_Test
             Read more: https://briefly.co.za/43137-mtn-apn-settings-south-africa-internet-settings-apn-settings-south-africa.html
 
          */
+        private static string APN = "internet";
+        private static string APNUser = "guest";
+        private static string APNPass = "";
 
         public static void Main()
         {
 
-            Debug.WriteLine("Configure pins ");
+            Debug.WriteLine($"Configure esp32 serial pins: TX({MODEM_TX}) RX:({MODEM_RX})");
             Debug.WriteLine("------------------------------");
             Configuration.SetPinFunction(MODEM_RX, DeviceFunction.COM2_RX);
             Configuration.SetPinFunction(MODEM_TX, DeviceFunction.COM2_TX);
 
-            Debug.WriteLine("Start Sim ");
+            Debug.WriteLine("Init Sim - Will ");
             Debug.WriteLine("------------------------------");
             // APN Details
             /*      private const string APN = "internet";
@@ -55,65 +58,37 @@ namespace Sim7600_Test
             */
 
             // Init modem
-            var sim = new sim7600("internet", "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
+            var sim = new sim7600(APN, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
 
-            /* you can check and test it*/
+            // if AT response fails 5x, sim chip will be restarted & retried
             Debug.WriteLine("Do Simple Sim Check At Commands");
             Debug.WriteLine("------------------------------");
             sim.SimCheck();
 
-            Debug.WriteLine("Firmware version");
+            Debug.WriteLine("About SIM Device");
             Debug.WriteLine("------------------------------");
-            sim.Firmware();
-            Debug.WriteLine("Sim Model");
-            Debug.WriteLine("------------------------------");
-            sim.Model();
             sim.About();
-
-            // sim.DisplayCurrentConfiguration(); Throws
-
-            /*Debug.WriteLine("Sim Location");
             Debug.WriteLine("------------------------------");
-            sim.Location();
-            Debug.WriteLine("------------------------------");
-            Debug.WriteLine("End of test");*/
-
-            sim.RequestModelIdentification();
-            sim.AutomaticTimeandTimezoneUpdate();
-
-            /*Debug.WriteLine("Display current configuration");
-            Debug.WriteLine("------------------------------");
-
-            sim.DisplayCurrentConfiguration();*/
+            Debug.WriteLine("End of test");
 
             // Network Connection Related
-            // src: https://github.com/vshymanskyy/TinyGSM/blob/f3dd62630be23ac60eee241d621ead1242f4e334/src/TinyGsmClientSIM7600.h
             Debug.WriteLine("InitializeModem");
             Debug.WriteLine("------------------------------");
-            /*            sim.PreferredModeSelectionAuto();
-                        sim.NetworkStopTCPIPService();
-                        sim.NetworkSetAuthType();
-                        sim.NetworkDefinePDPConext("internet");
 
-                        // Configure TCP parameters
-                        sim.NetworkSetupTCPUDPClientSocketConnection();
-                        sim.NetworkSetupSendingMode();
-                        sim.NetworkSetupSocketParamaters();
-                        sim.NetworkSetTCPIP_Timeout();*/
+            // Start modem connection sequence if its not already connected
+            if (sim.NetworkisConnected() == true)
+            {
+                Debug.WriteLine("Bypassing InitializeModem(), NetworkisConnected() == true");
+            }
+            else
+            {
+                sim.InitializeModem();
+            }
 
-            // Start the socket service
-
-            /*Debug.WriteLine("CMD Dump");
-            Debug.WriteLine("------------------------------");
-            sim.DumpCMD();
-            Debug.WriteLine("------------------------------");
-            Debug.WriteLine("End of CMD Dump");*/
-
-            // Set GPS config
+            // Location - Set GPS config
             sim.ConfigureGNSSSupportMode();
-
-            /* start using  modem */
-            sim.InitializeModem();
+            
+            // Url stuff
             //sim.ipko("http://exploreembedded.com/wiki/images/1/15/Hello.txt");
             //sim.Get("exploreembedded.com", 80, "/wiki/images/1/15/Hello.txt", "application/x-www-form-urlencoded", "");
             //sim.Get("baseurl.com", 80, "/somePathOnThatUrl", "application/x-www-form-urlencoded", "{\"Key\":\"Value\"}"); //is not finished yet ...
@@ -123,7 +98,7 @@ namespace Sim7600_Test
 
             //Debug.WriteLine("Test 1");
             Thread.Sleep(1000);
-            //sim.SMS("+27824030752", "ESP32 Sim7600x - Nanoframework SMS Yo!");
+            sim.SMS("+27824030752", "ESP32 Sim7600x - Nanoframework SMS Yo!");
             //Debug.WriteLine("Test 2");
             //sim.SMS("044173830", "Tung from Sim7600xL test 2");
             //Thread.Sleep(1000);
