@@ -1,0 +1,35 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32929.385
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{11A8DD76-328B-46DF-9F39-F559912D0360}") = "sim7600_Test", "sim7600_Test.nfproj", "{A390BEDB-9F08-4441-A54B-07B9824F05F6}"
+EndProject
+Project("{11A8DD76-328B-46DF-9F39-F559912D0360}") = "sim7600x", "..\sim7600x\sim7600x.nfproj", "{4782972C-E44F-455F-8549-92FB151506E6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A390BEDB-9F08-4441-A54B-07B9824F05F6}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4782972C-E44F-455F-8549-92FB151506E6}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FE7D3A3A-2CE9-40BB-88F5-8176B38C55AB}
+	EndGlobalSection
+EndGlobal
