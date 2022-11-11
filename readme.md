@@ -12,3 +12,7 @@
 
 ### Libraries used:
 - GPS NMEA https://github.com/mboud/TinyGPSPlusNF
+
+## Basic useage
+1. [Getting Started Guide for managed code (C#)](https://docs.nanoframework.net/content/getting-started-guides/getting-started-managed.html)
+2. Upload code
