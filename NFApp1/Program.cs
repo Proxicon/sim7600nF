@@ -1,16 +1,23 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Net;
 
 using nanoFramework.Hardware.Esp32;
 using System.Device.Gpio;
 using System.IO.Ports;
 using sim7600x;
+using TinyGPSPlusNF;
+using System.Text;
+using System.Net.Http;
 
 namespace Sim7600_Test
 {
     public class Program
     {
+        // static readonly HttpClient _httpClient = new HttpClient();
+        private static HttpClient _httpClient;
+
         static SerialPort port = null;
 
         // Modem specific
@@ -22,6 +29,7 @@ namespace Sim7600_Test
         private static int MODEM_RI = 33;
         private static int MODEM_FLIGHT = 25;
         private static int MODEM_STATUS = 34;
+
 
         /* APM Specific
             Source1: https://sabroadband.co.za/mtn-lte-apn-settings/
@@ -49,7 +57,7 @@ namespace Sim7600_Test
             Configuration.SetPinFunction(MODEM_RX, DeviceFunction.COM2_RX);
             Configuration.SetPinFunction(MODEM_TX, DeviceFunction.COM2_TX);
 
-            Debug.WriteLine("Init Sim - Will ");
+            Debug.WriteLine("Init Sim - Will power on chip");
             Debug.WriteLine("------------------------------");
             // APN Details
             /*      private const string APN = "internet";
@@ -59,9 +67,11 @@ namespace Sim7600_Test
 
             // Init modem
             var sim = new sim7600(APN, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
+            
+            // sim.ResetModule();  
 
             // if AT response fails 5x, sim chip will be restarted & retried
-            Debug.WriteLine("Do Simple Sim Check At Commands");
+            Debug.WriteLine("At Commands - restarts chip if no response x5");
             Debug.WriteLine("------------------------------");
             sim.SimCheck();
 
@@ -79,10 +89,13 @@ namespace Sim7600_Test
             if (sim.NetworkisConnected() == true)
             {
                 Debug.WriteLine("Bypassing InitializeModem(), NetworkisConnected() == true");
+                sim.OperatorSelection();
             }
             else
             {
+                Debug.WriteLine("NetworkisConnected() == false, calling InitializeModem()");
                 sim.InitializeModem();
+                sim.OperatorSelection();
             }
 
             // Location - Set GPS config
@@ -98,7 +111,8 @@ namespace Sim7600_Test
 
             //Debug.WriteLine("Test 1");
             Thread.Sleep(1000);
-            sim.SMS("+27824030752", "ESP32 Sim7600x - Nanoframework SMS Yo!");
+            //sim.SMS("+27824030752", "ESP32 Sim7600x - Nanoframework SMS Yo!");
+            // sim.Dial("+27824030752");
             //Debug.WriteLine("Test 2");
             //sim.SMS("044173830", "Tung from Sim7600xL test 2");
             //Thread.Sleep(1000);
@@ -114,10 +128,21 @@ namespace Sim7600_Test
 
             sim.GetGPSFixedPositionInformation();
 
+            _httpClient = new HttpClient();
+            _httpClient.SslProtocols = System.Net.Security.SslProtocols.Tls12;
+
             while (true)
             {
                 sim.GetGPSFixedPositionInformation();
                 Thread.Sleep(3000);
+
+                /*Debug.WriteLine("Posting to api");
+                var content = new StringContent("{\"device\":\"test123\"}", Encoding.UTF8, "application/json");
+
+                _httpClient.BaseAddress = new Uri("https://sim.proxicon.co.za/");
+                var result = _httpClient.Post("", content);
+
+                result.EnsureSuccessStatusCode();*/
             }
         }
 

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Device.Gpio;
 using System.Threading;
 using nanoFramework.Runtime.Events;
+using TinyGPSPlusNF;
 
 namespace sim7600x
 {
@@ -17,6 +18,8 @@ namespace sim7600x
         private readonly string _apn;
         private int _failures = 0;
         private bool _isConnected = false;
+
+        private static TinyGPSPlus s_gps;
 
         // GPIO init
         //private readonly GpioPin _batteryStatus; // Pin 35 for battery status, only works when not on USB aka, running on battery
@@ -46,6 +49,10 @@ namespace sim7600x
             _ledPower = new GpioController().OpenPin(ledpin, PinMode.Output);
             _ledPower.Write(PinValue.Low);
 
+            // set modem power
+            _MODEM_PWRKEY = new GpioController().OpenPin(pwkkey);
+            _MODEM_PWRKEY.SetPinMode(PinMode.Output);
+
             // Enable GPS for recieving AT commands
 
             /*For SIM7600E-H-M2/SIM7600SA-H-M2/SIM7600A-H-M2 module, GPS started should be decided
@@ -58,9 +65,12 @@ namespace sim7600x
             {
                 _MODEM_FLIGHT = new GpioController().OpenPin(flight);
                 _MODEM_FLIGHT.SetPinMode(PinMode.Output);
-                Debug.WriteLine($"Flight::{_MODEM_FLIGHT.Read()}");
                 _MODEM_FLIGHT.Write(PinValue.High);
             }
+
+
+            // create TinyGPS
+            TinyGPSPlus gps = new();
 
             _serial = new SerialPort(portName, 115200, Parity.None, 8, StopBits.One);
             _serial.Handshake = Handshake.RequestToSend;
@@ -82,19 +92,17 @@ namespace sim7600x
 
             if (isConnected)
             {
-                Debug.WriteLine("Modem is connected to network, no need to cycle power...");
+                Debug.WriteLine("Modem is connected to network, no need to cycle power...\n");
 
                 /* indicate modem can be controlled*/
                 _ledPower.Toggle();
             }
             else
             {
-                Debug.WriteLine("Modem network connection not detected, cycling chip power..");
+                Debug.WriteLine("Modem network connection not detected, cycling chip power..\n");
 
                 if (pwkkey > 0)
                 {
-                    _MODEM_PWRKEY = new GpioController().OpenPin(pwkkey);
-                    _MODEM_PWRKEY.SetPinMode(PinMode.Output);
                     _MODEM_PWRKEY.Write(PinValue.High);
                     Thread.Sleep(300);
                     _MODEM_PWRKEY.Write(PinValue.Low);
@@ -204,6 +212,13 @@ namespace sim7600x
                 NetworkDefinePDPConext("internet");
                 NetworkSetAuthType("guest");
 
+                // Initial settings
+                // Configure TCP parameters
+                NetworkSetupTCPUDPClientSocketConnection();
+                NetworkSetupSendingMode();
+                NetworkSetupSocketParamaters();
+                NetworkSetTCPIP_Timeout();
+
                 // Start the socket service
                 // You must execute AT+NETOPEN before any other TCP/UDP related operation
 
@@ -214,44 +229,8 @@ namespace sim7600x
                 // URC to show it's really connected.
                 NetworkStartSocketService();
 
-                // Configure TCP parameters
-                NetworkSetupTCPUDPClientSocketConnection();
-                NetworkSetupSendingMode();
-                NetworkSetupSocketParamaters();
-                NetworkSetTCPIP_Timeout();
-
-
                 RequestInternationalMobileSubscriberIdentity();
-
-                if (_lastResult.IndexOf("NETOPEN: 0") >= 0)
-                {
-                    Debug.WriteLine("NETOPEN: 0");
-                }
             }
-
-            /*SendCommand("AT+CIFSR\r", true);
-
-            if (_lastResult.IndexOf("ERROR") >= 0)
-            {
-                do
-                {
-                    SendCommand("AT+CIPSTATUS\r", true);
-
-                    if (_lastResult.IndexOf("IP INITIAL") >= 0)
-                    {
-                        SendCommand("AT+CSTT=\"" + _apn + "\"\r", true); //Set APN
-                        Thread.Sleep(100);
-
-                    }
-                    else if (_lastResult.IndexOf("IP START") >= 0)
-                    {
-                        SendCommand("AT+CIICR\r", true);
-                    }
-
-                    SendCommand("AT+CIFSR\r", true);
-
-                } while (_lastResult.IndexOf("ERROR") >= 0);
-            }*/
         }
 
         public void SendCommand(string command, bool waitForResponse = false, int timeout = 1000)
@@ -292,6 +271,17 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
+        public void ResetModule()
+        {
+            Debug.WriteLine("----------------(ResetModule)----------------");
+
+            // Test Command
+            SendCommand("AT+CRESET=?\r", true);
+            SendEndOfDataCommand();
+            // Exec Command
+            SendCommand("AT+CRESET\r", true);
+        }
+
         public void DisplayCurrentConfiguration()
         {
             Debug.WriteLine("----------------(DisplayCurrentConfiguration)----------------");
@@ -307,7 +297,6 @@ namespace sim7600x
             SendCommand("AT+CGMM\r", true);
             SendEndOfDataCommand();
         }
-
 
         public void ReportMobileEquipmentError()
         {
@@ -396,10 +385,11 @@ namespace sim7600x
             }
         }
 
-
         public void GetGPSFixedPositionInformation()
         {
             Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
+
+            //_serial.DataReceived += GpsDataReceived;
 
             // Test Command
             SendCommand("AT+CGPSINFO=?\r", true);
@@ -441,8 +431,8 @@ namespace sim7600x
             SendEndOfDataCommand();
 
             // Write Command
-            /*SendCommand("AT+COPS=0\r", true);
-            SendEndOfDataCommand();*/
+            SendCommand("AT+COPS=0\r", true);
+            SendEndOfDataCommand();
 
             GetIPaddressOfPDPContext();
         }
@@ -480,6 +470,9 @@ namespace sim7600x
         public void NetworkStopTCPIPService()
         {
             Debug.WriteLine("----------------(NetworkStopTCPIPService)----------------");
+
+            /*SendCommand("AT+CIPCLOSE\r", true);
+            SendEndOfDataCommand();*/
 
             SendCommand("AT+NETCLOSE\r", true);
             SendEndOfDataCommand();
@@ -532,8 +525,23 @@ namespace sim7600x
         {
             Debug.WriteLine("----------------(NetworkSetupTCPUDPClientSocketConnection)----------------");
 
-            SendCommand("AT+CIPMODE=0\r", true);
+            // Test Command
+            SendCommand("AT+CIPMODE=?\r", true);
             SendEndOfDataCommand();
+
+            // Read Command
+            SendCommand("AT+CIPMODE?\r", true);
+            if (_lastResult.IndexOf("+CIPMODE: 0") > 0)
+            {
+                Debug.WriteLine("+CIPMODE == 0, no need to set it again");
+                SendEndOfDataCommand();
+            }
+            else
+            {
+                // Write Command
+                SendCommand("AT+CIPMODE=0\r", true);
+                SendEndOfDataCommand();
+            }
         }
 
         // Set Sending Mode - send without waiting for peer TCP ACK
@@ -541,8 +549,23 @@ namespace sim7600x
         {
             Debug.WriteLine("----------------(NetworkSetupSendingMode)----------------");
 
-            SendCommand("AT+CIPSENDMODE=0\r", true);
+            // Test Command
+            SendCommand("AT+CIPSENDMODE=?\r", true);
             SendEndOfDataCommand();
+
+            // Read Command
+            SendCommand("AT+CIPSENDMODE?\r", true);
+            if (_lastResult.IndexOf("+CIPSENDMODE: 0") > 0)
+            {
+                Debug.WriteLine("+CIPSENDMODE = 0, no need to send it again");
+                SendEndOfDataCommand();
+            }
+            else
+            {
+                // Write Command
+                SendCommand("AT+CIPSENDMODE=0\r", true);
+                SendEndOfDataCommand();
+            }
         }
 
         // Configure socket parameters
@@ -595,19 +618,15 @@ namespace sim7600x
             if (_lastResult.IndexOf("1") >= 0)
             {
                 Debug.WriteLine("EPS registration for LTE modules detected..");
-                isConnected = true;
             }
 
-            
             SendCommand("AT+CGREG?\r", true);
             SendEndOfDataCommand();
             SendCommand("AT+CGREG?\r", true);
             if (_lastResult.IndexOf("2") >= 0)
             {
                 Debug.WriteLine("GPRS service registration detected...");
-                isConnected = true;
             }
-
 
             SendCommand("AT+CREG\r", true);
             SendEndOfDataCommand();
@@ -615,8 +634,9 @@ namespace sim7600x
             if (_lastResult.IndexOf("1") >= 0)
             {
                 Debug.WriteLine("Generic network registration detected...");
-                isConnected = true;
             }
+
+            isConnected = NetworkisConnected();
 
             return isConnected;
         }
@@ -632,7 +652,12 @@ namespace sim7600x
             if (_lastResult.IndexOf("NETOPEN: 0") >= 0)
             {
                 Debug.WriteLine("Detected NETOPEN: 0");
-            }
+            } 
+            else if(_lastResult.IndexOf("NETOPEN: 1") >= 0)
+            {
+                Debug.WriteLine("Detected NETOPEN: 1");
+                GetIPaddressOfPDPContext();
+            };
 
             SendCommand("AT+NETOPEN?\r", true);
             if (_lastResult.IndexOf("NETOPEN: 1") >= 0)
@@ -648,16 +673,22 @@ namespace sim7600x
         {
             Debug.WriteLine("----------------(Check if NetworkisConnected)----------------");
 
+            bool isConnected = false;
+
             SendCommand("AT+NETOPEN?\r", true);
             if (_lastResult.IndexOf("NETOPEN: 1") >= 0)
             {
                 Debug.WriteLine("Detected NETOPEN: 1");
-                SendEndOfDataCommand();
 
                 _isConnected = true;
+                isConnected = true;
+
+                GetIPaddressOfPDPContext();
             }
 
-            return true;
+            SendEndOfDataCommand();
+
+            return isConnected;
         }
 
         public void GetIPaddressOfPDPContext()
@@ -719,6 +750,13 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
+        public void Dial(string phoneNumber)
+        {
+            Debug.WriteLine("----------------(Dial)----------------");
+
+            SendCommand($"ATD{phoneNumber}\r", true);
+            SendEndOfDataCommand();
+        }
 
         /// <summary>
         /// Send Message to Number ex: +27824030752
@@ -727,11 +765,14 @@ namespace sim7600x
         /// <param name="message"></param>
         public void SMS(string phoneNumber, string message)
         {
+            Debug.WriteLine("----------------(SMS)----------------");
+
             SendCommand("AT+CMGF=1\r", true);
-            SendCommand("AT+CMGS=\"" + phoneNumber + "\"\r", true);
-            SendCommand(message + "\r");
+            SendCommand($"AT+CMGS=\"{phoneNumber}\"\r", true);
+            SendCommand($"{message}\r");
             SendEndOfDataCommand();
         }
+
         /// <summary>
         ///  Read one SMS examples  SMS with no 1 
         /// </summary>
@@ -786,6 +827,7 @@ namespace sim7600x
             SendCommand("AT+CMDA=\"DEL INBOX\"\r", true);
             SendEndOfDataCommand();
         }
+        
         public void DelAllSMS()
         {
             SendCommand("AT+CMGF=1\r", true);
@@ -1115,6 +1157,72 @@ namespace sim7600x
             {
                 Thread.Sleep(100);
             }
+        }
+
+        private void GpsDataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            if (_serial.BytesToRead == 0)
+            {
+                return;
+            }
+
+            byte[] buffer = new byte[_serial.BytesToRead];
+            int bytesRead = _serial.Read(buffer, 0, buffer.Length);
+
+            for (int i = 0; i < bytesRead; i++)
+            {
+                if (s_gps.Encode((char)buffer[i]))
+                {
+                    DisplayInfo();
+                }
+            }
+        }
+
+        private static void DisplayInfo()
+        {
+            Debug.Write("Location: ");
+            if (s_gps.Location.IsValid)
+            {
+                Debug.Write(s_gps.Location.Latitude.Degrees.ToString());
+                Debug.Write(",");
+                Debug.Write(s_gps.Location.Longitude.Degrees.ToString());
+            }
+            else
+            {
+                Debug.Write("INVALID");
+            }
+
+            Debug.Write("  Date/Time: ");
+            if (s_gps.Date.IsValid)
+            {
+                Debug.Write(s_gps.Date.Year.ToString());
+                Debug.Write("/");
+                Debug.Write(s_gps.Date.Month.ToString("D2"));
+                Debug.Write("/");
+                Debug.Write(s_gps.Date.Day.ToString("D2"));
+            }
+            else
+            {
+                Debug.Write("INVALID");
+            }
+
+            Debug.Write(" ");
+            if (s_gps.Time.IsValid)
+            {
+                Debug.Write(s_gps.Time.Hour.ToString("D2"));
+                Debug.Write(":");
+                Debug.Write(s_gps.Time.Minute.ToString("D2"));
+                Debug.Write(":");
+                Debug.Write(s_gps.Time.Second.ToString("D2"));
+                Debug.Write(".");
+                Debug.Write(s_gps.Time.Centisecond.ToString("D2"));
+            }
+            else
+            {
+                Debug.Write("INVALID");
+            }
+
+            Debug.WriteLine(string.Empty);
         }
     }
 }

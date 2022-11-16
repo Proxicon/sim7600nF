@@ -28,6 +28,9 @@
     <Reference Include="nanoFramework.Runtime.Events">
       <HintPath>..\NFApp1\packages\nanoFramework.Runtime.Events.1.11.1\lib\nanoFramework.Runtime.Events.dll</HintPath>
     </Reference>
+    <Reference Include="nanoFramework.Runtime.Native">
+      <HintPath>..\NFApp1\packages\nanoFramework.Runtime.Native.1.5.4\lib\nanoFramework.Runtime.Native.dll</HintPath>
+    </Reference>
     <Reference Include="nanoFramework.System.Text">
       <HintPath>..\NFApp1\packages\nanoFramework.System.Text.1.2.22\lib\nanoFramework.System.Text.dll</HintPath>
     </Reference>
@@ -39,6 +42,12 @@
     </Reference>
     <Reference Include="System.IO.Streams">
       <HintPath>..\NFApp1\packages\nanoFramework.System.IO.Streams.1.1.27\lib\System.IO.Streams.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Math">
+      <HintPath>..\NFApp1\packages\nanoFramework.System.Math.1.4.4\lib\System.Math.dll</HintPath>
+    </Reference>
+    <Reference Include="TinyGPSPlusNF">
+      <HintPath>..\NFApp1\packages\TinyGPSPlusNF.1.0.2\lib\TinyGPSPlusNF.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
