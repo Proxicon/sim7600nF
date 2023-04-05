@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Device.Gpio;
 using System.Threading;
 using nanoFramework.Runtime.Events;
+using System.Text.RegularExpressions;
 using TinyGPSPlusNF;
 
 namespace sim7600x
