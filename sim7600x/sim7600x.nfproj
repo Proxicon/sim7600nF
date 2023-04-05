@@ -23,7 +23,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib">
-      <HintPath>..\NFApp1\packages\nanoFramework.CoreLibrary.1.12.0\lib\mscorlib.dll</HintPath>
+      <HintPath>..\NFApp1\packages\nanoFramework.CoreLibrary.1.14.2\lib\mscorlib.dll</HintPath>
     </Reference>
     <Reference Include="nanoFramework.Runtime.Events">
       <HintPath>..\NFApp1\packages\nanoFramework.Runtime.Events.1.11.1\lib\nanoFramework.Runtime.Events.dll</HintPath>
@@ -31,8 +31,11 @@
     <Reference Include="nanoFramework.Runtime.Native">
       <HintPath>..\NFApp1\packages\nanoFramework.Runtime.Native.1.5.4\lib\nanoFramework.Runtime.Native.dll</HintPath>
     </Reference>
+    <Reference Include="nanoFramework.System.Collections">
+      <HintPath>..\NFApp1\packages\nanoFramework.System.Collections.1.5.18\lib\nanoFramework.System.Collections.dll</HintPath>
+    </Reference>
     <Reference Include="nanoFramework.System.Text">
-      <HintPath>..\NFApp1\packages\nanoFramework.System.Text.1.2.22\lib\nanoFramework.System.Text.dll</HintPath>
+      <HintPath>..\NFApp1\packages\nanoFramework.System.Text.1.2.37\lib\nanoFramework.System.Text.dll</HintPath>
     </Reference>
     <Reference Include="System.Device.Gpio">
       <HintPath>..\NFApp1\packages\nanoFramework.System.Device.Gpio.1.1.22\lib\System.Device.Gpio.dll</HintPath>
@@ -45,6 +48,9 @@
     </Reference>
     <Reference Include="System.Math">
       <HintPath>..\NFApp1\packages\nanoFramework.System.Math.1.4.4\lib\System.Math.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.RegularExpressions">
+      <HintPath>..\NFApp1\packages\nanoFramework.System.Text.RegularExpressions.1.1.37\lib\System.Text.RegularExpressions.dll</HintPath>
     </Reference>
     <Reference Include="TinyGPSPlusNF">
       <HintPath>..\NFApp1\packages\TinyGPSPlusNF.1.0.2\lib\TinyGPSPlusNF.dll</HintPath>

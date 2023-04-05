@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Device.Gpio;
 using System.Threading;
 using nanoFramework.Runtime.Events;
+using System.Text.RegularExpressions;
 using TinyGPSPlusNF;
 
 namespace sim7600x
@@ -385,24 +386,28 @@ namespace sim7600x
             }
         }
 
-        public void GetGPSFixedPositionInformation()
+        public string GetGPSFixedPositionInformation()
         {
             Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
 
-            //_serial.DataReceived += GpsDataReceived;
-
-            // Test Command
-            SendCommand("AT+CGPSINFO=?\r", true);
-            SendEndOfDataCommand();
-
-            // Read Command
-            SendCommand("AT+CGPSINFO?\r", true);
-            SendEndOfDataCommand();
-
-            // Execution Command
             SendCommand("AT+CGPSINFO\r", true);
             SendEndOfDataCommand();
 
+            string response = _lastResult;
+            Debug.WriteLine(response);
+
+            // Extract GPS data from the response
+            var match = Regex.Match(response, @"\+CGPSINFO: (.*)");
+            if (match.Success)
+            {
+                string gpsInfo = match.Groups[1].Value;
+                return gpsInfo;
+            }
+            else
+            {
+                Debug.WriteLine("Failed to retrieve GPS information.");
+                return null;
+            }
         }
 
         public void QuerySignalQuality()
@@ -991,6 +996,25 @@ namespace sim7600x
             }
         }
 
+        public string GetAuthToken(string host, int port, string endpoint, string username, string password)
+        {
+            string token = string.Empty;
+
+            string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
+
+            // Replace the existing Post method call with the modified version
+            string response = Post(host, port, endpoint, "application/json", postData);
+
+            // Use a simple JSON parser or regex to extract the token from the response
+            Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
+            if (match.Success)
+            {
+                token = match.Groups[1].Value;
+            }
+
+            return token;
+        }
+
         public void Get(string host, int port, string page, string contentType, string data)
         {
             var connectAttempts = 1;
@@ -1063,76 +1087,61 @@ namespace sim7600x
             }
         }
 
-        public void Post(string host, int port, string page, string contentType, string data)
+        public string Post(string host, int port, string page, string contentType, string data, string authToken = null)
         {
             var connectAttempts = 1;
             var errorOccurred = false;
 
-            // _serial.;
+            // Configure HTTP(S) method
+            SendCommand("AT+HTTPINIT\r", true);
+            SendCommand($"AT+HTTPPARA=\"CID\",1\r", true);
+            SendCommand($"AT+HTTPPARA=\"URL\",\"http://{host}:{port}{page}\"\r", true);
+            SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
 
-            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
+            // Add this line to include the Authorization header if authToken is provided
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + authToken + "\"\r\n");
+            }
 
-            Debug.WriteLine(_lastResult);
+            // Prepare POST data
+            SendCommand($"AT+HTTPDATA={data.Length},10000\r", true);
+            Thread.Sleep(500);
+            SendCommand($"{data}\r", true);
 
-            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
+            // Execute HTTP POST request
+            SendCommand("AT+HTTPACTION=1\r", true);
+
+            while (_lastResult.IndexOf("+HTTPACTION: 1") < 0 && connectAttempts <= 3)
             {
                 _serialDataFinished.WaitOne(5000, false);
                 connectAttempts++;
             }
 
-            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
+            if (_lastResult.IndexOf("+HTTPACTION: 1") >= 0)
             {
-                SendCommand("AT+CIPSTATUS\r", true);
-                Thread.Sleep(1000);
-                SendCommand("AT+CIPSEND\r", true);
-
-                if (_lastResult.IndexOf("ERROR") > 0)
+                // Check for HTTP status code and data length
+                var match = Regex.Match(_lastResult, @"\+HTTPACTION:\s*1,(\d+),(\d+)");
+                if (match.Success)
                 {
-                    HandleFailure();
-
-                    Post(host, port, page, contentType, data);
-
-                    errorOccurred = true;
+                    int statusCode = int.Parse(match.Groups[1].Value);
+                    int dataLength = int.Parse(match.Groups[2].Value);
+                    Debug.WriteLine($"HTTP status code: {statusCode}, Data length: {dataLength}");
                 }
 
-                if (!errorOccurred)
-                {
-                    Thread.Sleep(500);
-
-                    SendCommand("POST " + page + " HTTP/1.1\r\n");
-                    SendCommand("Host: " + host + "\r\n");
-                    SendCommand("Content-Length: " + data.Length + "\r\n");
-                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
-                    SendCommand(data + "\r");
-
-                    //_serial.Flush();
-
-                    SendEndOfDataCommand();
-
-                    _serialDataFinished.WaitOne(5000, false);
-
-                    SendCommand("AT+CIPCLOSE\r", true);
-
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        HandleFailure();
-
-                        Post(host, port, page, contentType, data);
-                    }
-                    else
-                    {
-                        _failures = 0;
-                    }
-                }
+                // Terminate HTTP session
+                SendCommand("AT+HTTPTERM\r", true);
             }
             else
             {
-                Debug.WriteLine("Error on open connection.  Re-initializing.");
+                Debug.WriteLine("Error on open connection. Re-initializing.");
 
                 HandleFailure();
 
                 Post(host, port, page, contentType, data);
             }
+
+            return _lastResult;
         }
 
         private void HandleFailure()
@@ -1173,56 +1182,58 @@ namespace sim7600x
             {
                 if (s_gps.Encode((char)buffer[i]))
                 {
-                    DisplayInfo();
+                    GetGpsData();
                 }
             }
         }
 
-        private static void DisplayInfo()
+        private static string GetGpsData()
         {
-            Debug.Write("Location: ");
+            StringBuilder sb = new StringBuilder();
+
+            sb.Append("Location: ");
             if (s_gps.Location.IsValid)
             {
-                Debug.Write(s_gps.Location.Latitude.Degrees.ToString());
-                Debug.Write(",");
-                Debug.Write(s_gps.Location.Longitude.Degrees.ToString());
+                sb.Append(s_gps.Location.Latitude.Degrees.ToString());
+                sb.Append(",");
+                sb.Append(s_gps.Location.Longitude.Degrees.ToString());
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append("INVALID");
             }
 
-            Debug.Write("  Date/Time: ");
+            sb.Append(" Date/Time: ");
             if (s_gps.Date.IsValid)
             {
-                Debug.Write(s_gps.Date.Year.ToString());
-                Debug.Write("/");
-                Debug.Write(s_gps.Date.Month.ToString("D2"));
-                Debug.Write("/");
-                Debug.Write(s_gps.Date.Day.ToString("D2"));
+                sb.Append(s_gps.Date.Year.ToString());
+                sb.Append("/");
+                sb.Append(s_gps.Date.Month.ToString("D2"));
+                sb.Append("/");
+                sb.Append(s_gps.Date.Day.ToString("D2"));
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append("INVALID");
             }
 
-            Debug.Write(" ");
             if (s_gps.Time.IsValid)
             {
-                Debug.Write(s_gps.Time.Hour.ToString("D2"));
-                Debug.Write(":");
-                Debug.Write(s_gps.Time.Minute.ToString("D2"));
-                Debug.Write(":");
-                Debug.Write(s_gps.Time.Second.ToString("D2"));
-                Debug.Write(".");
-                Debug.Write(s_gps.Time.Centisecond.ToString("D2"));
+                sb.Append(" ");
+                sb.Append(s_gps.Time.Hour.ToString("D2"));
+                sb.Append(":");
+                sb.Append(s_gps.Time.Minute.ToString("D2"));
+                sb.Append(":");
+                sb.Append(s_gps.Time.Second.ToString("D2"));
+                sb.Append(".");
+                sb.Append(s_gps.Time.Centisecond.ToString("D2"));
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append(" INVALID");
             }
 
-            Debug.WriteLine(string.Empty);
+            return sb.ToString();
         }
     }
 }
