@@ -1068,66 +1068,43 @@ namespace sim7600x
             var connectAttempts = 1;
             var errorOccurred = false;
 
-            // _serial.;
+            // Configure HTTP(S) method
+            SendCommand("AT+HTTPINIT\r", true);
+            SendCommand($"AT+HTTPPARA=\"CID\",1\r", true);
+            SendCommand($"AT+HTTPPARA=\"URL\",\"http://{host}:{port}{page}\"\r", true);
+            SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
 
-            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
+            // Prepare POST data
+            SendCommand($"AT+HTTPDATA={data.Length},10000\r", true);
+            Thread.Sleep(500);
+            SendCommand($"{data}\r", true);
 
-            Debug.WriteLine(_lastResult);
+            // Execute HTTP POST request
+            SendCommand("AT+HTTPACTION=1\r", true);
 
-            while (_lastResult.IndexOf("CONNECT OK") < 0 && _lastResult.IndexOf("ALREADY CONNECT") < 0 && connectAttempts <= 3)
+            while (_lastResult.IndexOf("+HTTPACTION: 1") < 0 && connectAttempts <= 3)
             {
                 _serialDataFinished.WaitOne(5000, false);
                 connectAttempts++;
             }
 
-            if (_lastResult.IndexOf("CONNECT OK") >= 0 || _lastResult.IndexOf("ALREADY CONNECT") >= 0)
+            if (_lastResult.IndexOf("+HTTPACTION: 1") >= 0)
             {
-                SendCommand("AT+CIPSTATUS\r", true);
-                Thread.Sleep(1000);
-                SendCommand("AT+CIPSEND\r", true);
-
-                if (_lastResult.IndexOf("ERROR") > 0)
+                // Check for HTTP status code and data length
+                var match = Regex.Match(_lastResult, @"\+HTTPACTION:\s*1,(\d+),(\d+)");
+                if (match.Success)
                 {
-                    HandleFailure();
-
-                    Post(host, port, page, contentType, data);
-
-                    errorOccurred = true;
+                    int statusCode = int.Parse(match.Groups[1].Value);
+                    int dataLength = int.Parse(match.Groups[2].Value);
+                    Debug.WriteLine($"HTTP status code: {statusCode}, Data length: {dataLength}");
                 }
 
-                if (!errorOccurred)
-                {
-                    Thread.Sleep(500);
-
-                    SendCommand("POST " + page + " HTTP/1.1\r\n");
-                    SendCommand("Host: " + host + "\r\n");
-                    SendCommand("Content-Length: " + data.Length + "\r\n");
-                    SendCommand("Content-Type: " + contentType + "\r\n\r\n");
-                    SendCommand(data + "\r");
-
-                    //_serial.Flush();
-
-                    SendEndOfDataCommand();
-
-                    _serialDataFinished.WaitOne(5000, false);
-
-                    SendCommand("AT+CIPCLOSE\r", true);
-
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        HandleFailure();
-
-                        Post(host, port, page, contentType, data);
-                    }
-                    else
-                    {
-                        _failures = 0;
-                    }
-                }
+                // Terminate HTTP session
+                SendCommand("AT+HTTPTERM\r", true);
             }
             else
             {
-                Debug.WriteLine("Error on open connection.  Re-initializing.");
+                Debug.WriteLine("Error on open connection. Re-initializing.");
 
                 HandleFailure();
 

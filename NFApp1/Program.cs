@@ -46,7 +46,7 @@ namespace Sim7600_Test
 
          */
         private static string APN = "internet";
-        private static string APNUser = "guest";
+        private static string APNUser = "";
         private static string APNPass = "";
 
         public static void Main()
@@ -68,7 +68,7 @@ namespace Sim7600_Test
             // Init modem
             var sim = new sim7600(APN, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
             
-            // sim.ResetModule();  
+            // sim.ResetModule();
 
             // if AT response fails 5x, sim chip will be restarted & retried
             Debug.WriteLine("At Commands - restarts chip if no response x5");
