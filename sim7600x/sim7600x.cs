@@ -996,6 +996,25 @@ namespace sim7600x
             }
         }
 
+        public string GetAuthToken(string host, int port, string endpoint, string username, string password)
+        {
+            string token = string.Empty;
+
+            string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
+
+            // Replace the existing Post method call with the modified version
+            string response = Post(host, port, endpoint, "application/json", postData);
+
+            // Use a simple JSON parser or regex to extract the token from the response
+            Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
+            if (match.Success)
+            {
+                token = match.Groups[1].Value;
+            }
+
+            return token;
+        }
+
         public void Get(string host, int port, string page, string contentType, string data)
         {
             var connectAttempts = 1;
@@ -1068,7 +1087,7 @@ namespace sim7600x
             }
         }
 
-        public void Post(string host, int port, string page, string contentType, string data)
+        public string Post(string host, int port, string page, string contentType, string data, string authToken = null)
         {
             var connectAttempts = 1;
             var errorOccurred = false;
@@ -1078,6 +1097,12 @@ namespace sim7600x
             SendCommand($"AT+HTTPPARA=\"CID\",1\r", true);
             SendCommand($"AT+HTTPPARA=\"URL\",\"http://{host}:{port}{page}\"\r", true);
             SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
+
+            // Add this line to include the Authorization header if authToken is provided
+            if (!string.IsNullOrEmpty(authToken))
+            {
+                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + authToken + "\"\r\n");
+            }
 
             // Prepare POST data
             SendCommand($"AT+HTTPDATA={data.Length},10000\r", true);
@@ -1115,6 +1140,8 @@ namespace sim7600x
 
                 Post(host, port, page, contentType, data);
             }
+
+            return _lastResult;
         }
 
         private void HandleFailure()

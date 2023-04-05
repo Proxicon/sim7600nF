@@ -47,7 +47,7 @@ namespace Sim7600_Test
 
          */
         private static string APN = "internet";
-        private static string APNUser = "";
+        private static string APNUser = "guest";
         private static string APNPass = "";
 
         public static void Main()
@@ -129,20 +129,33 @@ namespace Sim7600_Test
 
             sim.GetGPSFixedPositionInformation();
 
-            _httpClient = new HttpClient();
-            _httpClient.SslProtocols = System.Net.Security.SslProtocols.Tls12;
-
-            // endless loop to retieve GPS data and post to address
+            // Endless loop to retieve GPS data and post to address
             while (true)
             {
+                // Replace the placeholders with the actual values for your device, battery, and signal data.
+                string device = "esp7600-dev";
+                string battery = "";
+                int signal = 99;
+
+                // gets updated auth token
+                Debug.WriteLine("Retrieving aith token for sim.proxicon.co.za/token");
+
+                string token = sim.GetAuthToken("sim.proxicon.co.za", 443, "/token", "admin", "admin");
+
+                Debug.WriteLine("Token served:" + token);
+
+                Debug.WriteLine("Collecting GPS data from device: sim.GetGPSFixedPositionInformation()");
+
                 string gpsData = sim.GetGPSFixedPositionInformation();
+
                 if (!string.IsNullOrEmpty(gpsData))
                 {
                     // Convert GPS data to JSON
                     string[] gpsDataArray = gpsData.Split(',');
                     string jsonData = JsonConvert.SerializeObject(new
                     {
-                        Latitude = gpsDataArray[0],
+                        Device = device,
+                        Latitude = gpsDataArray[0], 
                         NS = gpsDataArray[1],
                         Longitude = gpsDataArray[2],
                         EW = gpsDataArray[3],
@@ -150,12 +163,30 @@ namespace Sim7600_Test
                         UTCTime = gpsDataArray[5],
                         Altitude = gpsDataArray[6],
                         Speed = gpsDataArray[7],
-                        Course = gpsDataArray[8]
+                        Course = gpsDataArray[8],
+                        Battery = battery,
+                        Signal = signal
                     });
+
+                    /*  
+                         // Alternative post
+                        string jsonPayload = JsonConvert.SerializeObject(new
+                        {
+                            Device = device,
+                            Latitude = s_gps.Location.Latitude.Degrees.ToString(),
+                            Longitude = s_gps.Location.Longitude.Degrees.ToString(),
+                            Date = s_gps.Date.Year.ToString() + "/" + s_gps.Date.Month.ToString("D2") + "/" + s_gps.Date.Day.ToString("D2"),
+                            UTCTime = s_gps.Time.Hour.ToString("D2") + ":" + s_gps.Time.Minute.ToString("D2") + ":" + s_gps.Time.Second.ToString("D2") + "." + s_gps.Time.Centisecond.ToString("D2"),
+                            // Add any other GPS data properties as needed
+                            Battery = battery,
+                            Signal = signal
+                        });
+
+                     */
 
                     try
                     {
-                        sim.Post("sim.proxicon.co.za", 443, "/", "application/json", jsonData);
+                        sim.Post("sim.proxicon.co.za", 443, "/simdata", "application/json", jsonData, token);
                     }
                     catch (Exception ex)
                     {
