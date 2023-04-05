@@ -10,6 +10,7 @@ using sim7600x;
 using TinyGPSPlusNF;
 using System.Text;
 using System.Net.Http;
+using nanoFramework.Json;
 
 namespace Sim7600_Test
 {
@@ -131,18 +132,42 @@ namespace Sim7600_Test
             _httpClient = new HttpClient();
             _httpClient.SslProtocols = System.Net.Security.SslProtocols.Tls12;
 
+            // endless loop to retieve GPS data and post to address
             while (true)
             {
-                sim.GetGPSFixedPositionInformation();
+                string gpsData = sim.GetGPSFixedPositionInformation();
+                if (!string.IsNullOrEmpty(gpsData))
+                {
+                    // Convert GPS data to JSON
+                    string[] gpsDataArray = gpsData.Split(',');
+                    string jsonData = JsonConvert.SerializeObject(new
+                    {
+                        Latitude = gpsDataArray[0],
+                        NS = gpsDataArray[1],
+                        Longitude = gpsDataArray[2],
+                        EW = gpsDataArray[3],
+                        Date = gpsDataArray[4],
+                        UTCTime = gpsDataArray[5],
+                        Altitude = gpsDataArray[6],
+                        Speed = gpsDataArray[7],
+                        Course = gpsDataArray[8]
+                    });
+
+                    try
+                    {
+                        sim.Post("sim.proxicon.co.za", 443, "/", "application/json", jsonData);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("Error posting GPS data: " + ex.Message);
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("Failed to retrieve GPS data.");
+                }
+
                 Thread.Sleep(3000);
-
-                /*Debug.WriteLine("Posting to api");
-                var content = new StringContent("{\"device\":\"test123\"}", Encoding.UTF8, "application/json");
-
-                _httpClient.BaseAddress = new Uri("https://sim.proxicon.co.za/");
-                var result = _httpClient.Post("", content);
-
-                result.EnsureSuccessStatusCode();*/
             }
         }
 

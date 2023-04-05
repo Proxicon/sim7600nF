@@ -386,24 +386,28 @@ namespace sim7600x
             }
         }
 
-        public void GetGPSFixedPositionInformation()
+        public string GetGPSFixedPositionInformation()
         {
             Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
 
-            //_serial.DataReceived += GpsDataReceived;
-
-            // Test Command
-            SendCommand("AT+CGPSINFO=?\r", true);
-            SendEndOfDataCommand();
-
-            // Read Command
-            SendCommand("AT+CGPSINFO?\r", true);
-            SendEndOfDataCommand();
-
-            // Execution Command
             SendCommand("AT+CGPSINFO\r", true);
             SendEndOfDataCommand();
 
+            string response = _lastResult;
+            Debug.WriteLine(response);
+
+            // Extract GPS data from the response
+            var match = Regex.Match(response, @"\+CGPSINFO: (.*)");
+            if (match.Success)
+            {
+                string gpsInfo = match.Groups[1].Value;
+                return gpsInfo;
+            }
+            else
+            {
+                Debug.WriteLine("Failed to retrieve GPS information.");
+                return null;
+            }
         }
 
         public void QuerySignalQuality()
@@ -1151,56 +1155,58 @@ namespace sim7600x
             {
                 if (s_gps.Encode((char)buffer[i]))
                 {
-                    DisplayInfo();
+                    GetGpsData();
                 }
             }
         }
 
-        private static void DisplayInfo()
+        private static string GetGpsData()
         {
-            Debug.Write("Location: ");
+            StringBuilder sb = new StringBuilder();
+
+            sb.Append("Location: ");
             if (s_gps.Location.IsValid)
             {
-                Debug.Write(s_gps.Location.Latitude.Degrees.ToString());
-                Debug.Write(",");
-                Debug.Write(s_gps.Location.Longitude.Degrees.ToString());
+                sb.Append(s_gps.Location.Latitude.Degrees.ToString());
+                sb.Append(",");
+                sb.Append(s_gps.Location.Longitude.Degrees.ToString());
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append("INVALID");
             }
 
-            Debug.Write("  Date/Time: ");
+            sb.Append(" Date/Time: ");
             if (s_gps.Date.IsValid)
             {
-                Debug.Write(s_gps.Date.Year.ToString());
-                Debug.Write("/");
-                Debug.Write(s_gps.Date.Month.ToString("D2"));
-                Debug.Write("/");
-                Debug.Write(s_gps.Date.Day.ToString("D2"));
+                sb.Append(s_gps.Date.Year.ToString());
+                sb.Append("/");
+                sb.Append(s_gps.Date.Month.ToString("D2"));
+                sb.Append("/");
+                sb.Append(s_gps.Date.Day.ToString("D2"));
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append("INVALID");
             }
 
-            Debug.Write(" ");
             if (s_gps.Time.IsValid)
             {
-                Debug.Write(s_gps.Time.Hour.ToString("D2"));
-                Debug.Write(":");
-                Debug.Write(s_gps.Time.Minute.ToString("D2"));
-                Debug.Write(":");
-                Debug.Write(s_gps.Time.Second.ToString("D2"));
-                Debug.Write(".");
-                Debug.Write(s_gps.Time.Centisecond.ToString("D2"));
+                sb.Append(" ");
+                sb.Append(s_gps.Time.Hour.ToString("D2"));
+                sb.Append(":");
+                sb.Append(s_gps.Time.Minute.ToString("D2"));
+                sb.Append(":");
+                sb.Append(s_gps.Time.Second.ToString("D2"));
+                sb.Append(".");
+                sb.Append(s_gps.Time.Centisecond.ToString("D2"));
             }
             else
             {
-                Debug.Write("INVALID");
+                sb.Append(" INVALID");
             }
 
-            Debug.WriteLine(string.Empty);
+            return sb.ToString();
         }
     }
 }
