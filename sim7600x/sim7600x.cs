@@ -5,8 +5,8 @@ using System.Diagnostics;
 using System.Device.Gpio;
 using System.Threading;
 using nanoFramework.Runtime.Events;
-using System.Text.RegularExpressions;
 using TinyGPSPlusNF;
+using System.Text.RegularExpressions;
 
 namespace sim7600x
 {
@@ -45,7 +45,7 @@ namespace sim7600x
         public sim7600(string apn, string portName, int pwkkey, int flight, int ledpin)
         {
             _apn = apn;
-            
+
             // init led & turn it off
             _ledPower = new GpioController().OpenPin(ledpin, PinMode.Output);
             _ledPower.Write(PinValue.Low);
@@ -126,7 +126,7 @@ namespace sim7600x
 
             while (_lastResult.IndexOf("OK") < 0)
             {
-                if(atAttempts > restartCounter)
+                if (atAttempts > restartCounter)
                 {
                     Debug.WriteLine($"Restarting Modem after {restartCounter} SimCheck Attempts...");
 
@@ -178,8 +178,7 @@ namespace sim7600x
 
                     _resultBuffer.Clear();
 
-                    Debug.WriteLine(_lastResult);
-
+                    Debug.WriteLine("SerialOnDataReceived._lastResult" + _lastResult);
 
                     _serialDataFinished.Set();
                 }
@@ -208,10 +207,10 @@ namespace sim7600x
 
                 PreferredModeSelectionAuto();
                 NetworkStopTCPIPService();
-                
+
                 // Set APN details 
                 NetworkDefinePDPConext("internet");
-                NetworkSetAuthType("guest");
+                NetworkSetAuthType("guest",0);
 
                 // Initial settings
                 // Configure TCP parameters
@@ -239,6 +238,7 @@ namespace sim7600x
             Debug.WriteLine($"AT+Comm = [{command}]\r");
 
             _serialDataFinished.Reset();
+
             _lastResult = "";
 
             var writeBuffer = Encoding.UTF8.GetBytes(command);
@@ -254,7 +254,6 @@ namespace sim7600x
         public void SendEndOfDataCommand()
         {
             _serialDataFinished.Reset();
-            _lastResult = "";
 
             var endChar = new byte[1];
             endChar[0] = 26;
@@ -262,8 +261,6 @@ namespace sim7600x
             _serial.Write(endChar, 0, 1);
 
             _serialDataFinished.WaitOne(1000, false);
-
-            Debug.WriteLine(_lastResult);
         }
 
         public void Test()
@@ -351,7 +348,8 @@ namespace sim7600x
                 Debug.WriteLine("+CGNSSMODE: 1,1 detected, no need to trigger write");
                 SendEndOfDataCommand();
 
-            }else
+            }
+            else
             {
                 // Write Command
                 SendCommand("AT+CGNSSMODE=1,1\r", true);
@@ -371,7 +369,7 @@ namespace sim7600x
             SendCommand("AT+CGPS?\r", true);
 
             // Only trigger write action if the setting is not 1,1
-            if(_lastResult.IndexOf("+CGPS: 1,1") > 0)
+            if (_lastResult.IndexOf("+CGPS: 1,1") > 0)
             {
                 Debug.WriteLine($"No need to set detected +CGPS: 1,1 ");
                 SendEndOfDataCommand();
@@ -386,6 +384,7 @@ namespace sim7600x
             }
         }
 
+        /*
         public string GetGPSFixedPositionInformation()
         {
             Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
@@ -394,7 +393,7 @@ namespace sim7600x
             SendEndOfDataCommand();
 
             string response = _lastResult;
-            Debug.WriteLine(response);
+            Debug.WriteLine("The _lastResult response was: " + response);
 
             // Extract GPS data from the response
             var match = Regex.Match(response, @"\+CGPSINFO: (.*)");
@@ -409,6 +408,31 @@ namespace sim7600x
                 return null;
             }
         }
+        */
+
+        public string GetGPSFixedPositionInformation()
+        {
+            Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
+
+            SendCommand("AT+CGPSINFO\r", true);
+            SendEndOfDataCommand();
+
+            string response = null;
+
+            var match = Regex.Match(_lastResult, @"\+CGPSINFO: (.*)");
+            if (match.Success)
+            {
+                response = match.Groups[1].Value;
+                Debug.WriteLine("The _lastResult response was: " + response);
+            }
+            else
+            {
+                Debug.WriteLine("Failed to retrieve GPS information.");
+            }
+
+            return response;
+        }
+
 
         public void QuerySignalQuality()
         {
@@ -458,7 +482,7 @@ namespace sim7600x
         public void PreferredModeSelectionAuto()
         {
             Debug.WriteLine("----------------(PreferredModeSelectionAuto)----------------");
-            
+
             // Test Command
             SendCommand("AT+CNMP=?\r", true);
             SendEndOfDataCommand();
@@ -468,7 +492,8 @@ namespace sim7600x
             SendEndOfDataCommand();
 
             // Write Command
-            SendCommand("AT+CNMP=2\r", true);
+            // 0 auto, 2 GSM only, 38 LTE
+            SendCommand("AT+CNMP=0\r", true);
             SendEndOfDataCommand();
         }
 
@@ -483,7 +508,7 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
-        public void NetworkSetAuthType(string User = "", string Password = "")
+        public void NetworkSetAuthType(string User = "", int Password = 0)
         {
             Debug.WriteLine("----------------(NetworkSetAuthType)----------------");
 
@@ -601,7 +626,7 @@ namespace sim7600x
         {
 
             Debug.WriteLine("----------------(NetworkSetTCPIP_Timeout)----------------");
-            
+
             SendCommand("AT+CIPTIMEOUT=75000,15000,15000\r", true);
             SendEndOfDataCommand();
         }
@@ -657,8 +682,8 @@ namespace sim7600x
             if (_lastResult.IndexOf("NETOPEN: 0") >= 0)
             {
                 Debug.WriteLine("Detected NETOPEN: 0");
-            } 
-            else if(_lastResult.IndexOf("NETOPEN: 1") >= 0)
+            }
+            else if (_lastResult.IndexOf("NETOPEN: 1") >= 0)
             {
                 Debug.WriteLine("Detected NETOPEN: 1");
                 GetIPaddressOfPDPContext();
@@ -670,7 +695,7 @@ namespace sim7600x
                 Debug.WriteLine("Detected NETOPEN: 1");
                 SendEndOfDataCommand();
             }
-            
+
             GetIPaddressOfPDPContext();
         }
 
@@ -832,7 +857,7 @@ namespace sim7600x
             SendCommand("AT+CMDA=\"DEL INBOX\"\r", true);
             SendEndOfDataCommand();
         }
-        
+
         public void DelAllSMS()
         {
             SendCommand("AT+CMGF=1\r", true);
@@ -996,25 +1021,6 @@ namespace sim7600x
             }
         }
 
-        public string GetAuthToken(string host, int port, string endpoint, string username, string password)
-        {
-            string token = string.Empty;
-
-            string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
-
-            // Replace the existing Post method call with the modified version
-            string response = Post(host, port, endpoint, "application/json", postData);
-
-            // Use a simple JSON parser or regex to extract the token from the response
-            Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
-            if (match.Success)
-            {
-                token = match.Groups[1].Value;
-            }
-
-            return token;
-        }
-
         public void Get(string host, int port, string page, string contentType, string data)
         {
             var connectAttempts = 1;
@@ -1092,11 +1098,22 @@ namespace sim7600x
             var connectAttempts = 1;
             var errorOccurred = false;
 
-            // Configure HTTP(S) method
+            // Configure HTTP(s) parameters
+            if(port == 443)
+            {
+                SendCommand("AT+CCHSTART\r", true); //SSL service
+                SendCommand("AT+CCHCFG=\"sendtimeout\",\"0\",\"60\"\r", true); //SSL client
+
+                SendCommand("AT+CCERTDOWN=\"client_key.der\",\"611\"\r", true); //Download client
+
+                SendCommand($"AT+CCHOPEN=\"0\",\"{host}{page}\",\"{port}\",\"2\"\r", true); //cost connection
+            }
+
             SendCommand("AT+HTTPINIT\r", true);
-            SendCommand($"AT+HTTPPARA=\"CID\",1\r", true);
+            SendCommand("AT+HTTPPARA=\"CID\",1\r", true);
             SendCommand($"AT+HTTPPARA=\"URL\",\"http://{host}:{port}{page}\"\r", true);
             SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
+            
 
             // Add this line to include the Authorization header if authToken is provided
             if (!string.IsNullOrEmpty(authToken))
@@ -1104,56 +1121,92 @@ namespace sim7600x
                 SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + authToken + "\"\r\n");
             }
 
-            // Prepare POST data
-            SendCommand($"AT+HTTPDATA={data.Length},10000\r", true);
-            Thread.Sleep(500);
-            SendCommand($"{data}\r", true);
+            // Prepare data
+            var dataToSend = Encoding.UTF8.GetBytes(data);
+            SendCommand($"AT+HTTPDATA={dataToSend.Length},10000\r", true);
+            _serialDataFinished.WaitOne(10000, false);
 
-            // Execute HTTP POST request
-            SendCommand("AT+HTTPACTION=1\r", true);
-
-            while (_lastResult.IndexOf("+HTTPACTION: 1") < 0 && connectAttempts <= 3)
+            if (_lastResult.IndexOf("DOWNLOAD") >= 0)
             {
-                _serialDataFinished.WaitOne(5000, false);
-                connectAttempts++;
+                _serial.Write(dataToSend, 0, dataToSend.Length);
+                _serialDataFinished.WaitOne(10000, false);
+            }
+            else
+            {
+                errorOccurred = true;
             }
 
-            if (_lastResult.IndexOf("+HTTPACTION: 1") >= 0)
+            if (!errorOccurred)
             {
-                // Check for HTTP status code and data length
-                var match = Regex.Match(_lastResult, @"\+HTTPACTION:\s*1,(\d+),(\d+)");
-                if (match.Success)
-                {
-                    int statusCode = int.Parse(match.Groups[1].Value);
-                    int dataLength = int.Parse(match.Groups[2].Value);
-                    Debug.WriteLine($"HTTP status code: {statusCode}, Data length: {dataLength}");
-                }
+                // Perform POST request
+                SendCommand("AT+HTTPACTION=1\r", true);
+                _serialDataFinished.WaitOne(120000, false);
 
-                // Terminate HTTP session
-                SendCommand("AT+HTTPTERM\r", true);
+                if (_lastResult.IndexOf("HTTPACTION: 1") >= 0)
+                {
+                    // AT+HTTPHEAD Read the HTTP(S) Header Information of Server Response
+                    SendCommand("AT+HTTPHEAD\r", true);
+
+                    // Read response data
+                    SendCommand("AT+HTTPREAD\r", true);
+                    _serialDataFinished.WaitOne(10000, false);
+
+                    if (_lastResult.IndexOf("ERROR") > 0)
+                    {
+                        HandleFailure();
+
+                        Get(host, port, page, contentType, data);
+                    }
+
+                    // Close HTTP connection
+                    SendCommand("AT+HTTPTERM\r", true);
+                    _serialDataFinished.WaitOne(1000, false);
+                }
+                else
+                {
+                    HandleFailure();
+                    Post(host, port, page, contentType, data);
+                }
             }
             else
             {
                 Debug.WriteLine("Error on open connection. Re-initializing.");
-
                 HandleFailure();
-
                 Post(host, port, page, contentType, data);
             }
 
             return _lastResult;
         }
 
+        public string GetAuthToken(string host, int port, string endpoint, string username, string password)
+        {
+            string token = string.Empty;
+
+            string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
+
+            // Replace the existing Post method call with the modified version
+            string response = Post(host, port, endpoint, "application/json", postData);
+
+            // Use a simple JSON parser or regex to extract the token from the response
+            Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
+            if (match.Success)
+            {
+                token = match.Groups[1].Value;
+            }
+
+            return token;
+        }
+
         private void HandleFailure()
         {
             _failures++;
 
-            Debug.WriteLine("Failures: " + _failures);
+            Debug.WriteLine($"Failures: {_failures}");
 
+            // Close the connection or shut it down depending on the number of failures
             if (_failures % 2 == 0)
             {
                 SendCommand("AT+CIPSHUT\r", true);
-
                 InitializeModem();
             }
             else
@@ -1161,11 +1214,8 @@ namespace sim7600x
                 SendCommand("AT+CIPCLOSE\r", true);
             }
 
-            //Sleep for a second allowing events to process to hopefully sync up the serial data communication
-            for (int i = 1; i <= 10; i++)
-            {
-                Thread.Sleep(100);
-            }
+            // Sleep for a second allowing events to process to hopefully sync up the serial data communication
+            Thread.Sleep(1000);
         }
 
         private void GpsDataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -1235,5 +1285,6 @@ namespace sim7600x
 
             return sb.ToString();
         }
+
     }
 }

@@ -1,15 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
-using System.Net;
 
 using nanoFramework.Hardware.Esp32;
 using System.Device.Gpio;
 using System.IO.Ports;
 using sim7600x;
-using TinyGPSPlusNF;
 using System.Text;
-using System.Net.Http;
 using nanoFramework.Json;
 
 namespace Sim7600_Test
@@ -17,7 +14,7 @@ namespace Sim7600_Test
     public class Program
     {
         // static readonly HttpClient _httpClient = new HttpClient();
-        private static HttpClient _httpClient;
+        // private static HttpClient _httpClient;
 
         static SerialPort port = null;
 
@@ -26,10 +23,10 @@ namespace Sim7600_Test
         private static int MODEM_TX = 27;
         private static int MODEM_RX = 26;
         private static int MODEM_PWRKEY = 4;
-        private static int MODEM_DTR = 32;
-        private static int MODEM_RI = 33;
+        // private static int MODEM_DTR = 32;
+        // private static int MODEM_RI = 33;
         private static int MODEM_FLIGHT = 25;
-        private static int MODEM_STATUS = 34;
+        // private static int MODEM_STATUS = 34;
 
 
         /* APM Specific
@@ -60,6 +57,7 @@ namespace Sim7600_Test
 
             Debug.WriteLine("Init Sim - Will power on chip");
             Debug.WriteLine("------------------------------");
+
             // APN Details
             /*      private const string APN = "internet";
                     private const string gprsUser = "guest";
@@ -68,8 +66,8 @@ namespace Sim7600_Test
 
             // Init modem
             var sim = new sim7600(APN, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
-            
-            // sim.ResetModule();
+
+            // sim.ResetModule();  
 
             // if AT response fails 5x, sim chip will be restarted & retried
             Debug.WriteLine("At Commands - restarts chip if no response x5");
@@ -101,7 +99,7 @@ namespace Sim7600_Test
 
             // Location - Set GPS config
             sim.ConfigureGNSSSupportMode();
-            
+
             // Url stuff
             //sim.ipko("http://exploreembedded.com/wiki/images/1/15/Hello.txt");
             //sim.Get("exploreembedded.com", 80, "/wiki/images/1/15/Hello.txt", "application/x-www-form-urlencoded", "");
@@ -125,80 +123,51 @@ namespace Sim7600_Test
             // Start GPS Session
             sim.StartStopGpsSession(1);
 
-            // 5000ms pause
 
-            sim.GetGPSFixedPositionInformation();
+            Debug.WriteLine("Starting main loop next... HTTP post tests.");
 
-            // Endless loop to retieve GPS data and post to address
+            // start main loop
             while (true)
             {
-                // Replace the placeholders with the actual values for your device, battery, and signal data.
-                string device = "esp7600-dev";
-                string battery = "";
-                int signal = 99;
 
-                // gets updated auth token
-                Debug.WriteLine("Retrieving aith token for sim.proxicon.co.za/token");
-
-                string token = sim.GetAuthToken("sim.proxicon.co.za", 443, "/token", "admin", "admin");
-
-                Debug.WriteLine("Token served:" + token);
-
-                Debug.WriteLine("Collecting GPS data from device: sim.GetGPSFixedPositionInformation()");
-
+                Debug.WriteLine("Calling: sim.GetGPSFixedPositionInformation(); sleep 3000");
                 string gpsData = sim.GetGPSFixedPositionInformation();
 
-                if (!string.IsNullOrEmpty(gpsData))
+                // Convert GPS data to JSON
+                string[] gpsDataArray = gpsData.Split(',');
+
+                /* This breaks???
+                string jsonData = JsonSerializer.SerializeObject(new
                 {
-                    // Convert GPS data to JSON
-                    string[] gpsDataArray = gpsData.Split(',');
-                    string jsonData = JsonConvert.SerializeObject(new
-                    {
-                        Device = device,
-                        Latitude = gpsDataArray[0], 
-                        NS = gpsDataArray[1],
-                        Longitude = gpsDataArray[2],
-                        EW = gpsDataArray[3],
-                        Date = gpsDataArray[4],
-                        UTCTime = gpsDataArray[5],
-                        Altitude = gpsDataArray[6],
-                        Speed = gpsDataArray[7],
-                        Course = gpsDataArray[8],
-                        Battery = battery,
-                        Signal = signal
-                    });
+                    Latitude = gpsDataArray[0],
+                    NS = gpsDataArray[1],
+                    Longitude = gpsDataArray[2],
+                    EW = gpsDataArray[3],
+                    Date = gpsDataArray[4],
+                    UTCTime = gpsDataArray[5],
+                    Altitude = gpsDataArray[6],
+                    Speed = gpsDataArray[7],
+                    Course = gpsDataArray[8]
+                });
+                */
 
-                    /*  
-                         // Alternative post
-                        string jsonPayload = JsonConvert.SerializeObject(new
-                        {
-                            Device = device,
-                            Latitude = s_gps.Location.Latitude.Degrees.ToString(),
-                            Longitude = s_gps.Location.Longitude.Degrees.ToString(),
-                            Date = s_gps.Date.Year.ToString() + "/" + s_gps.Date.Month.ToString("D2") + "/" + s_gps.Date.Day.ToString("D2"),
-                            UTCTime = s_gps.Time.Hour.ToString("D2") + ":" + s_gps.Time.Minute.ToString("D2") + ":" + s_gps.Time.Second.ToString("D2") + "." + s_gps.Time.Centisecond.ToString("D2"),
-                            // Add any other GPS data properties as needed
-                            Battery = battery,
-                            Signal = signal
-                        });
 
-                     */
+                Thread.Sleep(1000);
 
-                    try
-                    {
-                        sim.Post("sim.proxicon.co.za", 443, "/simdata", "application/json", jsonData, token);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine("Error posting GPS data: " + ex.Message);
-                    }
-                }
-                else
+                try
                 {
-                    Debug.WriteLine("Failed to retrieve GPS data.");
-                }
+                    // get auth token
+                    Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", 443, \"/token\", \"admin\", \"admin\")");
+                    string token = sim.GetAuthToken("sim.proxicon.co.za", 443, "/token", "admin", "admin");
 
-                Thread.Sleep(3000);
+                    // post gps data
+                    Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", 443, \"/simdata\", \"application/json\", gpsData, token);");
+                    sim.Post("sim.proxicon.co.za", 443, "/simdata", "application/json", gpsData, token);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Error posting GPS data: " + ex.Message);
+                }
             }
         }
 
