@@ -7,6 +7,8 @@ using System.Threading;
 using nanoFramework.Runtime.Events;
 using TinyGPSPlusNF;
 using System.Text.RegularExpressions;
+using System.Collections;
+using nanoFramework.Json;
 
 namespace sim7600x
 {
@@ -14,10 +16,13 @@ namespace sim7600x
     {
         private readonly SerialPort _serial;
         private readonly StringBuilder _resultBuffer = new StringBuilder();
+        private readonly StringBuilder _resultBufferPostReturn = new StringBuilder();
         private readonly AutoResetEvent _serialDataFinished = new AutoResetEvent(false);
         private string _lastResult = "";
+        private string _lastResultPostReturn = "";
         private readonly string _apn;
         private int _failures = 0;
+        private int _returnBufferCounter = 0;
         private bool _isConnected = false;
 
         private static TinyGPSPlus s_gps;
@@ -39,10 +44,11 @@ namespace sim7600x
         private readonly GpioPin _SD_SCLK;       //Pin 14
         private readonly GpioPin _SD_CS;         //Pin 13
 
+
         // public int pwkkey;
         // public int rstkey;
         // public int poweronkey;
-        public sim7600(string apn, string portName, int pwkkey, int flight, int ledpin)
+        public sim7600(string apn, string gprsuser, string gprspass, string portName, int pwkkey, int flight, int ledpin)
         {
             _apn = apn;
 
@@ -50,16 +56,15 @@ namespace sim7600x
             _ledPower = new GpioController().OpenPin(ledpin, PinMode.Output);
             _ledPower.Write(PinValue.Low);
 
-            // set modem power
+            // Initialize the modem power and check network connection
             _MODEM_PWRKEY = new GpioController().OpenPin(pwkkey);
             _MODEM_PWRKEY.SetPinMode(PinMode.Output);
 
-            // Enable GPS for recieving AT commands
-
-            /*For SIM7600E-H-M2/SIM7600SA-H-M2/SIM7600A-H-M2 module, GPS started should be decided
-            by the physical switch of GPS flight mode in the module firstly. Open the switch, GPS will be
-            started automatically, then you can open or close gps by AT command, otherwize, GPS could not
-            be started in any way.it will report +CME ERROR:GPS flight mode enabl
+            /* Enable GPS for recieving AT commands
+               For SIM7600E-H-M2/SIM7600SA-H-M2/SIM7600A-H-M2 module, GPS started should be decided
+               by the physical switch of GPS flight mode in the module firstly. Open the switch, GPS will be
+               started automatically, then you can open or close gps by AT command, otherwize, GPS could not
+               be started in any way.it will report +CME ERROR:GPS flight mode enable
             */
 
             if (flight > 0)
@@ -70,9 +75,10 @@ namespace sim7600x
             }
 
 
-            // create TinyGPS
-            TinyGPSPlus gps = new();
+            // Create TinyGPS
+            //TinyGPSPlus gps = new();
 
+            // Create serial hardware interface & attach event handler
             _serial = new SerialPort(portName, 115200, Parity.None, 8, StopBits.One);
             _serial.Handshake = Handshake.RequestToSend;
 
@@ -80,13 +86,16 @@ namespace sim7600x
 
             _serial.Open();
 
-            /*
-            Turns on the chip, SIM chip stays online after flashing new firmware delaying the startup sequence
-            we add a check first to see if the network is connected before turning it off and back on
-            */
 
             // check automatice time & timezome update setting
             AutomaticTimeandTimezoneUpdate();
+
+            /*
+                Turn on the sim chip, sim chip stays online after flashing new firmware delaying the startup sequence
+                we add a check first to see if the network is connected after module reboot or new firmware flashed
+                before turning it off and back on.
+            */
+
 
             // check connectivity state
             bool isConnected = NetworkisConnected();
@@ -97,6 +106,9 @@ namespace sim7600x
 
                 /* indicate modem can be controlled*/
                 _ledPower.Toggle();
+
+                // GprsConnect(apn, gprsuser, gprspass);
+                // ModemHTTPTesting();
             }
             else
             {
@@ -113,7 +125,107 @@ namespace sim7600x
 
                     /* indicate modem can be controlled*/
                     _ledPower.Toggle();
+
+                    //ModemStartupTesting(apn, gprsuser, gprspass);
+                    //ModemHTTPTesting();
+                    //ModemInit();
+                    //GprsConnect(apn, gprsuser, gprspass);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Initializes the GSM modem.
+        /// </summary>
+        /// <param name="serialPort">The SerialPort instance used to communicate with the modem.</param>
+        public void ModemInit()
+        {
+            // Reset the modem
+            SendCommand("ATZ\r", true);
+            SendEndOfDataCommand();
+
+            // Check the modem status
+            SendCommand("AT\r", true);
+            SendEndOfDataCommand();
+
+            // Configure the modem settings
+            SendCommand("ATE0\r", true); // Disable echo mode
+            SendEndOfDataCommand();
+            SendCommand("AT+CMEE=2\r", true); // Enable verbose error messages
+            SendEndOfDataCommand();
+            SendCommand("AT+CMGF=1\r", true); // Set SMS message format to text mode
+            SendEndOfDataCommand();
+
+            // Initialize the SIM card
+            SendCommand("AT+CPIN?\r", true); // Check if SIM card is present
+            SendEndOfDataCommand();
+            SendCommand("AT+CPIN=\"00000\"\r", true); // Enter SIM card PIN (if required)
+            SendEndOfDataCommand();
+
+            // Wait for network registration
+            SendCommand("AT+CREG?\r", true); // Check network registration status
+            while (_lastResult.IndexOf("+CREG: 0,1") == -1 && _lastResult.IndexOf("+CREG: 0,5") == -1)
+            {
+                Thread.Sleep(1000);
+                SendCommand("AT+CREG?\r", true);
+                SendEndOfDataCommand();
+            }
+        }
+
+        /// <summary>
+        /// This method powers off the modem, waits for a short period, and then powers it back on again. It also waits for 
+        /// the modem to wake up and be ready for use before reinitializing it using the ModemInit method
+        /// </summary>
+        public void PowerCycleModem()
+        {
+            // Power off the modem
+            _MODEM_PWRKEY.SetPinMode(PinMode.Output);
+            _MODEM_PWRKEY.Write(PinValue.High);
+            Thread.Sleep(300);
+            _MODEM_PWRKEY.Write(PinValue.Low);
+
+            // Allow modem to wake and be ready for use
+            Thread.Sleep(10000);
+
+            // Reinitialize the modem
+            ModemInit();
+        }
+
+        /// <summary>
+        /// Establishes a GPRS connection using the specified APN and login credentials.
+        /// </summary>
+        /// <param name="apn">The Access Point Name (APN) of the cellular network.</param>
+        /// <param name="gprsUser">The user name (if required) for GPRS authentication.</param>
+        /// <param name="gprsPass">The password (if required) for GPRS authentication.</param>
+        public void GprsConnect(string apn, string gprsUser = null, string gprsPass = null)
+        {
+            Debug.WriteLine("----------------(GprsConnect)----------------");
+
+            // Enable GPRS
+            SendCommand("AT+CGATT=1\r", true);
+            SendEndOfDataCommand();
+
+            // Set APN
+            SendCommand($"AT+CGDCONT=1,\"IP\",\"{apn}\"\r", true);
+            SendEndOfDataCommand();
+
+            // Set login credentials (if provided)
+            if (gprsUser != null && gprsPass != null)
+            {
+                SendCommand($"AT+CGAUTH=1,0,\"{gprsUser}\",\"{gprsPass}\"\r", true);
+                SendEndOfDataCommand();
+            }
+
+            // Activate PDP context
+            SendCommand("AT+CGACT=1,1\r", true);
+            SendEndOfDataCommand();
+
+            // Check PDP context status
+            SendCommand("AT+CGACT?\r", true);
+            while (_lastResult.IndexOf("+CGACT: 1,0") != -1)
+            {
+                Thread.Sleep(1000);
+                SendCommand("AT+CGACT?\r", true);
             }
         }
 
@@ -176,12 +288,48 @@ namespace sim7600x
                 {
                     _lastResult = _resultBuffer.ToString();
 
-                    _resultBuffer.Clear();
-
                     Debug.WriteLine("SerialOnDataReceived._lastResult" + _lastResult);
+
+                    _resultBuffer.Clear();
 
                     _serialDataFinished.Set();
                 }
+
+                // Check if the buffer contains a complete response for http post reads
+                
+                if (_resultBuffer.ToString().Contains("+HTTPREAD: DATA"))
+                {
+
+                    // Check if we've run the _resultBuffer.ToString() method 5 times
+                    if (_returnBufferCounter >= 2)
+                    {
+                        // Extract the response data from the buffer
+                        _resultBufferPostReturn.Append(_resultBuffer); //.Substring(_resultBuffer.ToString().IndexOf("\n") + 1);
+
+                        // Clear the buffer
+                        // _resultBufferPostReturn.Clear();
+
+                        // Clear the counter
+                        _returnBufferCounter = 0;
+                    }
+                    else
+                    {
+
+                        // Print the response to the console (for debugging purposes)
+                        Debug.WriteLine($"Return Header Counter={_returnBufferCounter}");
+                        Debug.WriteLine(_resultBufferPostReturn.ToString());
+
+                        // Update return
+                        _lastResultPostReturn = _resultBufferPostReturn.ToString();
+
+                        _returnBufferCounter++;
+                    }
+
+
+                    // You can now process the response data as needed
+                    // For example, you could parse the JSON data or extract certain fields from the response
+                }
+
             }
         }
 
@@ -200,17 +348,18 @@ namespace sim7600x
             if (connectionDetected == true)
             {
                 Debug.WriteLine("Detected network connection, bypassing connection sequence...");
+
             }
             else
             {
                 Debug.WriteLine("Starting network connection sequence...");
 
                 PreferredModeSelectionAuto();
-                NetworkStopTCPIPService();
+                // NetworkStopTCPIPService();
 
                 // Set APN details 
-                NetworkDefinePDPConext("internet");
-                NetworkSetAuthType("guest",0);
+                // NetworkDefinePDPConext("myMTN");
+                // NetworkSetAuthType("","");9
 
                 // Initial settings
                 // Configure TCP parameters
@@ -233,24 +382,39 @@ namespace sim7600x
             }
         }
 
+        /// <summary>
+        /// Sends an AT command to the device and optionally waits for a response.
+        /// </summary>
+        /// <param name="command">The AT command to send.</param>
+        /// <param name="waitForResponse">A value indicating whether to wait for a response.</param>
+        /// <param name="timeout">The maximum amount of time to wait for a response (in milliseconds).</param>
         public void SendCommand(string command, bool waitForResponse = false, int timeout = 1000)
         {
-            Debug.WriteLine($"AT+Comm = [{command}]\r");
+            // Log the command being sent to the device
+            Debug.WriteLine($"AT+Comm = [{command}]");
 
+            // Reset the ManualResetEvent used to signal the completion of the data transfer
             _serialDataFinished.Reset();
 
+            // Clear the _lastResult variable, indicating that no response has been received yet
             _lastResult = "";
 
+            // Convert the command string to a byte array
             var writeBuffer = Encoding.UTF8.GetBytes(command);
 
+            // Send the command to the device
             _serial.Write(writeBuffer, 0, writeBuffer.Length);
 
+            // If waiting for a response, wait for the response signal from the device
             if (waitForResponse)
             {
                 _serialDataFinished.WaitOne(timeout, false);
             }
         }
 
+        /// <summary>
+        /// Sends the end-of-data command to the module.
+        /// </summary>
         public void SendEndOfDataCommand()
         {
             _serialDataFinished.Reset();
@@ -269,6 +433,9 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
+        /// <summary>
+        /// Resets the sim module.
+        /// </summary>
         public void ResetModule()
         {
             Debug.WriteLine("----------------(ResetModule)----------------");
@@ -384,32 +551,6 @@ namespace sim7600x
             }
         }
 
-        /*
-        public string GetGPSFixedPositionInformation()
-        {
-            Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
-
-            SendCommand("AT+CGPSINFO\r", true);
-            SendEndOfDataCommand();
-
-            string response = _lastResult;
-            Debug.WriteLine("The _lastResult response was: " + response);
-
-            // Extract GPS data from the response
-            var match = Regex.Match(response, @"\+CGPSINFO: (.*)");
-            if (match.Success)
-            {
-                string gpsInfo = match.Groups[1].Value;
-                return gpsInfo;
-            }
-            else
-            {
-                Debug.WriteLine("Failed to retrieve GPS information.");
-                return null;
-            }
-        }
-        */
-
         public string GetGPSFixedPositionInformation()
         {
             Debug.WriteLine("----------------(GetGPSFixedPositionInformation)----------------");
@@ -462,8 +603,6 @@ namespace sim7600x
             // Write Command
             SendCommand("AT+COPS=0\r", true);
             SendEndOfDataCommand();
-
-            GetIPaddressOfPDPContext();
         }
 
         public void RequestInternationalMobileSubscriberIdentity()
@@ -489,12 +628,20 @@ namespace sim7600x
 
             // Read Command
             SendCommand("AT+CNMP?\r", true);
-            SendEndOfDataCommand();
 
-            // Write Command
-            // 0 auto, 2 GSM only, 38 LTE
-            SendCommand("AT+CNMP=0\r", true);
-            SendEndOfDataCommand();
+            // Validate setting Command
+            if (_lastResult.IndexOf("+CNMP: 2") > 0)
+            {
+                Debug.WriteLine("+CNMP == 2, no need to set it again");
+                SendEndOfDataCommand();
+            }
+            else
+            {
+                // Write Command
+                // 2 auto, 13 GSM only, 38 LTE only
+                SendCommand("AT+CNMP=0\r", true);
+                SendEndOfDataCommand();
+            }
         }
 
         public void NetworkStopTCPIPService()
@@ -508,7 +655,7 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
-        public void NetworkSetAuthType(string User = "", int Password = 0)
+        public void NetworkSetAuthType(string User = "", string Password = "0")
         {
             Debug.WriteLine("----------------(NetworkSetAuthType)----------------");
 
@@ -527,6 +674,11 @@ namespace sim7600x
             // Execute Command
             SendCommand("AT+CGAUTH\r", true);
             SendEndOfDataCommand();
+
+            // Read Command
+            SendCommand("AT+CGAUTH?\r", true);
+            SendEndOfDataCommand();
+
         }
 
         public void NetworkDefinePDPConext(string APN = "internet")
@@ -542,11 +694,152 @@ namespace sim7600x
             SendEndOfDataCommand();
 
             // Write command
-            SendCommand($"AT+CGDCONT=1,\"IP\",\"{APN}\",\"0.0.0.0\",0,0\r", true);
+            SendCommand($"AT+CGDCONT=1,\"IP\",\"{_apn}\",\"0.0.0.0\",0,0\r", true);
             SendEndOfDataCommand();
 
             // Execute command
             SendCommand("AT+CGDCONT\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void NetworkActivatePDPContext()
+        {
+            Debug.WriteLine("----------------(NetworkActivatePDPContext)----------------");
+
+            // Test command
+            SendCommand("AT+CGACT=?\r", true);
+            SendEndOfDataCommand();
+
+            // Read command
+            SendCommand("AT+CGACT?\r", true);
+            SendEndOfDataCommand();
+
+            // Write command
+            SendCommand("AT+CGACT=1,1\r", true);
+            SendEndOfDataCommand();
+
+        }
+
+        public void ModemStartupTesting(string apn, string username = null, string password = null, string protocol = "TCP", string server = null, int port = 0)
+        {
+            Debug.WriteLine("----------------(ModemStartupTesting)----------------");
+
+            // Query modem's manufacturer identification
+            SendCommand("AT+CGMI\r", true);
+            SendEndOfDataCommand();
+
+            // Query modem's model identification
+            SendCommand("AT+CGMM\r", true);
+            SendEndOfDataCommand();
+
+            // Check if modem is registered on the network
+            SendCommand("AT+CREG?\r", true);
+            SendEndOfDataCommand();
+
+            // Set the APN
+            SendCommand($"AT+CGDCONT=1,\"IP\",\"{apn}\",\"0.0.0.0\",0,0\r", true);
+            SendEndOfDataCommand();
+
+            // Set the username and password (if required)
+            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            {
+                SendCommand($"AT+CGAUTH=1,1,\"{username}\",\"{password}\"\r", true);
+                SendEndOfDataCommand();
+            }
+
+            // Enable network registration
+            SendCommand("AT+CREG=1\r", true);
+            SendEndOfDataCommand();
+
+            // Check network registration status
+            SendCommand("AT+CREG?\r", true);
+            SendEndOfDataCommand();
+
+            // Open the GPRS context
+            SendCommand("AT+CGACT=1,1\r", true);
+            SendEndOfDataCommand();
+
+            // Check GPRS context activation status
+            SendCommand("AT+CGACT?\r", true);
+            SendEndOfDataCommand();
+
+            // Check the IP address of the PDP context
+            SendCommand("AT+CGPADDR\r", true);
+            SendEndOfDataCommand();
+
+            // Connect to the TCP or SSL client
+            if (!string.IsNullOrEmpty(server) && port > 0)
+            {
+                SendCommand($"AT+CIPOPEN=\"{protocol}\",\"{server}\",{port}\r", true);
+                SendEndOfDataCommand();
+
+                // Send data to the server (if required)
+                // AT+CIPSEND
+                // ...
+
+                // Close the connection
+                SendCommand("AT+CIPCLOSE\r", true);
+                SendEndOfDataCommand();
+            }
+        }
+
+        public void ModemHTTPTesting()
+        {
+            Debug.WriteLine("----------------(ModemHTTPTesting)----------------");
+
+            // Initialize HTTP service
+            SendCommand("AT+HTTPINIT\r", true);
+            SendEndOfDataCommand();
+
+            // Set URL
+            SendCommand("AT+HTTPPARA=\"URL\",\"http://sim.proxicon.co.za/\"\r", true);
+            SendEndOfDataCommand();
+
+            // Set HTTP method to GET
+            SendCommand("AT+HTTPPARA=\"CID\",1\r", true);
+            SendEndOfDataCommand();
+
+            // Start GET request
+            SendCommand("AT+HTTPACTION=0\r", true);
+            SendEndOfDataCommand();
+
+            // Read response
+            SendCommand("AT+HTTPREAD=0,1000\r", true);
+            SendEndOfDataCommand();
+
+            // Close HTTP service
+            SendCommand("AT+HTTPTERM\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void TestPDPContext()
+        {
+            Debug.WriteLine("----------------(TestPDPContext)----------------");
+
+            // Define the PDP context
+            NetworkDefinePDPConext();
+
+            // Activate the PDP context
+            NetworkActivatePDPContext();
+
+            // Test the connection by sending an HTTP GET request
+            SendCommand("AT+HTTPPARA=\"URL\",\"http://www.example.com\"\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+HTTPACTION=0\r", true);
+            SendEndOfDataCommand();
+
+            // Read HTTP response
+            SendCommand("AT+HTTPREAD\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void Ping(string hostname, int count, int interval, int packetsize, int timeout, int ttl, int vrf)
+        {
+            Debug.WriteLine("----------------(Ping)----------------");
+
+            string command = $"AT+CPING=\"{hostname}\",{count},{interval},{packetsize},{timeout},{ttl},{vrf}\r";
+            SendCommand(command, true);
             SendEndOfDataCommand();
         }
 
@@ -1021,14 +1314,33 @@ namespace sim7600x
             }
         }
 
-        public void Get(string host, int port, string page, string contentType, string data)
+        public void HttpGet(string url)
+        {
+            Debug.WriteLine("----------------(HttpGet)----------------");
+
+            // Set HTTP parameters
+            SendCommand("AT+HTTPPARA=\"CID\",1\r", true);
+            SendEndOfDataCommand();
+            SendCommand($"AT+HTTPPARA=\"URL\",\"{url}\"\r", true);
+            SendEndOfDataCommand();
+
+            // Set HTTP action
+            SendCommand("AT+HTTPACTION=0\r", true);
+            SendEndOfDataCommand();
+
+            // Read HTTP response
+            SendCommand("AT+HTTPREAD\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void Get(string host, string page, string contentType, string data)
         {
             var connectAttempts = 1;
             var errorOccurred = false;
 
             // _serial.;
 
-            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"" + port + "\"\r", true);
+            SendCommand("AT+CIPSTART=\"TCP\",\"" + host + "\",\"\"\r", true);
 
             Debug.WriteLine(_lastResult);
 
@@ -1048,7 +1360,7 @@ namespace sim7600x
                 {
                     HandleFailure();
 
-                    Get(host, port, page, contentType, data);
+                    Get(host, page, contentType, data);
 
                     errorOccurred = true;
                 }
@@ -1075,7 +1387,7 @@ namespace sim7600x
                     {
                         HandleFailure();
 
-                        Get(host, port, page, contentType, data);
+                        Get(host, page, contentType, data);
                     }
                     else
                     {
@@ -1089,31 +1401,21 @@ namespace sim7600x
 
                 HandleFailure();
 
-                Get(host, port, page, contentType, data);
+                Get(host, page, contentType, data);
             }
         }
 
-        public string Post(string host, int port, string page, string contentType, string data, string authToken = null)
+        public string Post(string host, string page, string contentType, string data, string authToken = null)
         {
             var connectAttempts = 1;
             var errorOccurred = false;
+            var jsontoken = ""; 
 
-            // Configure HTTP(s) parameters
-            if(port == 443)
-            {
-                SendCommand("AT+CCHSTART\r", true); //SSL service
-                SendCommand("AT+CCHCFG=\"sendtimeout\",\"0\",\"60\"\r", true); //SSL client
-
-                SendCommand("AT+CCERTDOWN=\"client_key.der\",\"611\"\r", true); //Download client
-
-                SendCommand($"AT+CCHOPEN=\"0\",\"{host}{page}\",\"{port}\",\"2\"\r", true); //cost connection
-            }
-
+            // Close HTTP connection
             SendCommand("AT+HTTPINIT\r", true);
             SendCommand("AT+HTTPPARA=\"CID\",1\r", true);
-            SendCommand($"AT+HTTPPARA=\"URL\",\"http://{host}:{port}{page}\"\r", true);
+            SendCommand($"AT+HTTPPARA=\"URL\",\"{host}{page}\"\r", true);
             SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
-            
 
             // Add this line to include the Authorization header if authToken is provided
             if (!string.IsNullOrEmpty(authToken))
@@ -1124,12 +1426,12 @@ namespace sim7600x
             // Prepare data
             var dataToSend = Encoding.UTF8.GetBytes(data);
             SendCommand($"AT+HTTPDATA={dataToSend.Length},10000\r", true);
-            _serialDataFinished.WaitOne(10000, false);
+            _serialDataFinished.WaitOne(1000, false);
 
             if (_lastResult.IndexOf("DOWNLOAD") >= 0)
             {
                 _serial.Write(dataToSend, 0, dataToSend.Length);
-                _serialDataFinished.WaitOne(10000, false);
+                _serialDataFinished.WaitOne(1000, false);
             }
             else
             {
@@ -1140,22 +1442,35 @@ namespace sim7600x
             {
                 // Perform POST request
                 SendCommand("AT+HTTPACTION=1\r", true);
-                _serialDataFinished.WaitOne(120000, false);
+                _serialDataFinished.WaitOne(2000, false);
 
                 if (_lastResult.IndexOf("HTTPACTION: 1") >= 0)
                 {
                     // AT+HTTPHEAD Read the HTTP(S) Header Information of Server Response
                     SendCommand("AT+HTTPHEAD\r", true);
 
+                    // get data len
+                    SendCommand("AT+HTTPREAD?\r", true);
+                    _serialDataFinished.WaitOne(1000, false);
+
                     // Read response data
-                    SendCommand("AT+HTTPREAD\r", true);
+                    SendCommand("AT+HTTPREAD=0,1024\r", true);
                     _serialDataFinished.WaitOne(10000, false);
+
+                    jsontoken = _lastResult;
+
+                    Debug.WriteLine("Final second stringbuilder data:");
+                    Debug.WriteLine(_resultBufferPostReturn.ToString());
 
                     if (_lastResult.IndexOf("ERROR") > 0)
                     {
                         HandleFailure();
 
-                        Get(host, port, page, contentType, data);
+                        Get(host, page, contentType, data);
+                    }else
+                    {
+                        byte[] jsonBytes = Encoding.UTF8.GetBytes(jsontoken);
+                        object jsonObject = JsonSerializer.SerializeObject(jsonBytes);
                     }
 
                     // Close HTTP connection
@@ -1165,27 +1480,27 @@ namespace sim7600x
                 else
                 {
                     HandleFailure();
-                    Post(host, port, page, contentType, data);
+                    Post(host, page, contentType, data);
                 }
             }
             else
             {
                 Debug.WriteLine("Error on open connection. Re-initializing.");
                 HandleFailure();
-                Post(host, port, page, contentType, data);
+                Post(host, page, contentType, data);
             }
 
-            return _lastResult;
+            return _resultBufferPostReturn.ToString();
         }
 
-        public string GetAuthToken(string host, int port, string endpoint, string username, string password)
+        public string GetAuthToken(string host, string endpoint, string username, string password)
         {
             string token = string.Empty;
 
             string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
 
             // Replace the existing Post method call with the modified version
-            string response = Post(host, port, endpoint, "application/json", postData);
+            string response = Post(host, endpoint, "application/json", postData);
 
             // Use a simple JSON parser or regex to extract the token from the response
             Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
@@ -1216,6 +1531,90 @@ namespace sim7600x
 
             // Sleep for a second allowing events to process to hopefully sync up the serial data communication
             Thread.Sleep(1000);
+        }
+
+        public void SetSSLContext()
+        {
+            Debug.WriteLine("----------------(SetSSLContext)----------------");
+
+            SendCommand("AT+CSSLCFG=\"sslversion\",3,4\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CSSLCFG=\"ciphersuite\",0xFFFF\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CSSLCFG=\"seclevel\",0\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CSSLCFG=\"cacert\",0\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CSSLCFG=\"clientcert\",0\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CSSLCFG=\"clientkey\",0\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void StartSSLService()
+        {
+            Debug.WriteLine("----------------(StartSSLService)----------------");
+
+            SendCommand("AT+CCHSTART\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void StopSSLService()
+        {
+            Debug.WriteLine("----------------(StopSSLService)----------------");
+
+            SendCommand("AT+CCHSTOP\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void ConnectToSSLServer(string host, int port)
+        {
+            Debug.WriteLine("----------------(ConnectToSSLServer)----------------");
+
+            SendCommand($"AT+CCHOPEN=\"SSL\",\"{host}\",\"{port}\"\r", true);
+            SendEndOfDataCommand();
+        }
+
+        public void SendDataToSSLServer(string data)
+        {
+            Debug.WriteLine("----------------(SendDataToSSLServer)----------------");
+
+            var dataToSend = Encoding.UTF8.GetBytes(data);
+            SendCommand($"AT+CCHSEND={dataToSend.Length}\r", true);
+            SendCommand(data, false);
+            SendEndOfDataCommand();
+        }
+
+        public string ReadDataFromSSLServer()
+        {
+            Debug.WriteLine("----------------(ReadDataFromSSLServer)----------------");
+
+            SendCommand("AT+CCHRECV\r", true);
+            SendEndOfDataCommand();
+
+            return _lastResult;
+        }
+
+        public void ConfigureSSLClientContext()
+        {
+            Debug.WriteLine("----------------(ConfigureSSLClientContext)----------------");
+
+            SendCommand("AT+CCHCFG=\"sslctxid\",1\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CCHCFG=\"sslversion\",3\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CCHCFG=\"ciphersuite\",0xFFFF\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CCHCFG=\"seclevel\",0\r", true);
+            SendEndOfDataCommand();
         }
 
         private void GpsDataReceived(object sender, SerialDataReceivedEventArgs e)

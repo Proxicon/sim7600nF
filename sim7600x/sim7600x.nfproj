@@ -25,6 +25,9 @@
     <Reference Include="mscorlib">
       <HintPath>..\NFApp1\packages\nanoFramework.CoreLibrary.1.14.2\lib\mscorlib.dll</HintPath>
     </Reference>
+    <Reference Include="nanoFramework.Json">
+      <HintPath>..\NFApp1\packages\nanoFramework.Json.2.2.84\lib\nanoFramework.Json.dll</HintPath>
+    </Reference>
     <Reference Include="nanoFramework.Runtime.Events">
       <HintPath>..\NFApp1\packages\nanoFramework.Runtime.Events.1.11.6\lib\nanoFramework.Runtime.Events.dll</HintPath>
     </Reference>

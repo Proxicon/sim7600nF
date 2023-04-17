@@ -43,13 +43,12 @@ namespace Sim7600_Test
             Read more: https://briefly.co.za/43137-mtn-apn-settings-south-africa-internet-settings-apn-settings-south-africa.html
 
          */
-        private static string APN = "internet";
-        private static string APNUser = "guest";
+        private static string APN = "myMTN"; // "Internet";
+        private static string APNUser = "";
         private static string APNPass = "";
 
         public static void Main()
         {
-
             Debug.WriteLine($"Configure esp32 serial pins: TX({MODEM_TX}) RX:({MODEM_RX})");
             Debug.WriteLine("------------------------------");
             Configuration.SetPinFunction(MODEM_RX, DeviceFunction.COM2_RX);
@@ -58,16 +57,12 @@ namespace Sim7600_Test
             Debug.WriteLine("Init Sim - Will power on chip");
             Debug.WriteLine("------------------------------");
 
-            // APN Details
-            /*      private const string APN = "internet";
-                    private const string gprsUser = "guest";
-                    private const string gprsPass = "";
-            */
-
             // Init modem
-            var sim = new sim7600(APN, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
+            var sim = new sim7600(APN, APNUser, APNPass, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
 
-            // sim.ResetModule();  
+            // sim.ResetModule();
+            sim.InitializeModem();
+            // sim.GprsConnect(APN, APNPass, APNUser); 
 
             // if AT response fails 5x, sim chip will be restarted & retried
             Debug.WriteLine("At Commands - restarts chip if no response x5");
@@ -89,6 +84,10 @@ namespace Sim7600_Test
             {
                 Debug.WriteLine("Bypassing InitializeModem(), NetworkisConnected() == true");
                 sim.OperatorSelection();
+
+                //sim.NetworkSetAuthType(APNUser, APNPass);
+                //sim.TestPDPContext();
+
             }
             else
             {
@@ -109,7 +108,7 @@ namespace Sim7600_Test
             sim.ReadICCIDFromSimCard();
 
             //Debug.WriteLine("Test 1");
-            Thread.Sleep(1000);
+            // Thread.Sleep(1000);
             //sim.SMS("+27824030752", "ESP32 Sim7600x - Nanoframework SMS Yo!");
             // sim.Dial("+27824030752");
             //Debug.WriteLine("Test 2");
@@ -151,18 +150,15 @@ namespace Sim7600_Test
                 });
                 */
 
-
-                Thread.Sleep(1000);
-
                 try
                 {
                     // get auth token
-                    Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", 443, \"/token\", \"admin\", \"admin\")");
-                    string token = sim.GetAuthToken("sim.proxicon.co.za", 443, "/token", "admin", "admin");
+                    Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
+                    string token = sim.GetAuthToken("http://sim.proxicon.co.za","/token", "admin", "admin");
 
                     // post gps data
                     Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", 443, \"/simdata\", \"application/json\", gpsData, token);");
-                    sim.Post("sim.proxicon.co.za", 443, "/simdata", "application/json", gpsData, token);
+                    sim.Post("http://sim.proxicon.co.za", "/simdata", "application/json", gpsData, token);
                 }
                 catch (Exception ex)
                 {
