@@ -1158,77 +1158,6 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
-        public void ipko(string url)
-        {
-            SendCommand("AT+CREG?\r\n", true);
-            SendEndOfDataCommand();
-
-            SendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=3,1,\"APN\",\"IPKO\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=3,1,\"USER\",\"\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+SAPBR=2,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+CLBS=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+CLTS?\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(10000);
-            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(15000);
-            SendCommand("AT+CIPGSMLOC=2,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(500);
-            SendCommand("AT+CIPGSMLOC=1,1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(15000);
-            //SendCommand("AT+SAPBR=0,1\r\n", true);
-            //SendEndOfDataCommand();
-            //Thread.Sleep(100);
-            SendCommand("AT+HTTPINIT\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            // SendCommand("AT+HTTPPARA=\"PROIP\",\"213.229.249.40\"\r\n", true);
-            // SendEndOfDataCommand();
-            // Thread.Sleep(100);
-            // SendCommand("AT+HTTPPARA=\"PROPORT\",\"8080\"\r\n", true);
-            // SendEndOfDataCommand();
-            // Thread.Sleep(100);
-            //SendCommand("AT+HTTPSSL=1\r\n", true);
-            //SendEndOfDataCommand();
-            //Thread.Sleep(100);
-            SendCommand("AT+HTTPPARA=\"CID\",1\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(100);
-            SendCommand("AT+HTTPACTION=0\r\n", true);
-            SendEndOfDataCommand();
-            Thread.Sleep(10000);
-            //SendCommand("AT+HTTPREAD=0,28\r\n", true);
-            SendCommand("AT+HTTPREAD\r\n", true);
-            SendEndOfDataCommand();
-
-            //Thread.Sleep(100);
-            //SendEndOfDataCommand();
-            //SendCommand("AT+HTTPTERM\r\n", true);
-            //Thread.Sleep(100);
-            //https://www.ipko.com/en/faq/si-te-konfiguroj-roaming-ne-telefon/
-
-        }
-
         public void http(string url)
         {
             var connectAttempts = 1;
@@ -1455,12 +1384,13 @@ namespace sim7600x
 
                     // Read response data
                     SendCommand("AT+HTTPREAD=0,1024\r", true);
-                    _serialDataFinished.WaitOne(10000, false);
-
-                    jsontoken = _lastResult;
+                    _serialDataFinished.WaitOne(5000, false);
 
                     Debug.WriteLine("Final second stringbuilder data:");
                     Debug.WriteLine(_resultBufferPostReturn.ToString());
+
+                    jsontoken = _resultBufferPostReturn.ToString();
+                    _resultBufferPostReturn.Clear();
 
                     if (_lastResult.IndexOf("ERROR") > 0)
                     {
@@ -1490,7 +1420,7 @@ namespace sim7600x
                 Post(host, page, contentType, data);
             }
 
-            return _resultBufferPostReturn.ToString();
+            return jsontoken;
         }
 
         public string GetAuthToken(string host, string endpoint, string username, string password)

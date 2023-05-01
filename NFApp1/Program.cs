@@ -13,11 +13,6 @@ namespace Sim7600_Test
 {
     public class Program
     {
-        // static readonly HttpClient _httpClient = new HttpClient();
-        // private static HttpClient _httpClient;
-
-        static SerialPort port = null;
-
         // Modem specific
         private static int LED = 12;
         private static int MODEM_TX = 27;
@@ -43,6 +38,7 @@ namespace Sim7600_Test
             Read more: https://briefly.co.za/43137-mtn-apn-settings-south-africa-internet-settings-apn-settings-south-africa.html
 
          */
+
         private static string APN = "myMTN"; // "Internet";
         private static string APNUser = "";
         private static string APNPass = "";
@@ -54,7 +50,7 @@ namespace Sim7600_Test
             Configuration.SetPinFunction(MODEM_RX, DeviceFunction.COM2_RX);
             Configuration.SetPinFunction(MODEM_TX, DeviceFunction.COM2_TX);
 
-            Debug.WriteLine("Init Sim - Will power on chip");
+            Debug.WriteLine("Init Sim - Will power on chip,gps & connect to network");
             Debug.WriteLine("------------------------------");
 
             // Init modem
@@ -100,7 +96,6 @@ namespace Sim7600_Test
             sim.ConfigureGNSSSupportMode();
 
             // Url stuff
-            //sim.ipko("http://exploreembedded.com/wiki/images/1/15/Hello.txt");
             //sim.Get("exploreembedded.com", 80, "/wiki/images/1/15/Hello.txt", "application/x-www-form-urlencoded", "");
             //sim.Get("baseurl.com", 80, "/somePathOnThatUrl", "application/x-www-form-urlencoded", "{\"Key\":\"Value\"}"); //is not finished yet ...
             //sim.Post("baseurl.com", 80, "/somePathOnThatUrl", "application/json", "{\"Key\":\"Value\"}");
@@ -176,12 +171,6 @@ namespace Sim7600_Test
             recivedinfo.Read(buffer, 0, buffer.Length);
             Debug.WriteLine("Received data : ");
             Debug.WriteLine(System.Text.Encoding.UTF8.GetString(buffer, 0, buffer.Length));
-        }
-
-        private static void UartSend(string toSend)
-        {
-            byte[] bytesToSent = System.Text.Encoding.UTF8.GetBytes(toSend + "\r\n");
-            port.Write(toSend);
         }
     }
 }
