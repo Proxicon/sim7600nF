@@ -43,8 +43,12 @@ namespace Sim7600_Test
         private static string APNUser = "";
         private static string APNPass = "";
 
+        // API Auth
+        private string _authToken;
+
         public static void Main()
         {
+
             Debug.WriteLine($"Configure esp32 serial pins: TX({MODEM_TX}) RX:({MODEM_RX})");
             Debug.WriteLine("------------------------------");
             Configuration.SetPinFunction(MODEM_RX, DeviceFunction.COM2_RX);
@@ -52,6 +56,8 @@ namespace Sim7600_Test
 
             Debug.WriteLine("Init Sim - Will power on chip,gps & connect to network");
             Debug.WriteLine("------------------------------");
+
+            PrintMemoryInfo();
 
             // Init modem
             var sim = new sim7600(APN, APNUser, APNPass, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
@@ -117,15 +123,15 @@ namespace Sim7600_Test
             // Start GPS Session
             sim.StartStopGpsSession(1);
 
-
             Debug.WriteLine("Starting main loop next... HTTP post tests.");
 
             // start main loop
             while (true)
             {
-
                 Debug.WriteLine("Calling: sim.GetGPSFixedPositionInformation(); sleep 3000");
                 string gpsData = sim.GetGPSFixedPositionInformation();
+
+                Debug.WriteLine(gpsData);
 
                 // Convert GPS data to JSON
                 string[] gpsDataArray = gpsData.Split(',');
@@ -147,19 +153,34 @@ namespace Sim7600_Test
 
                 try
                 {
+                    PrintMemoryInfo();
+
                     // get auth token
                     Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
-                    string token = sim.GetAuthToken("http://sim.proxicon.co.za","/token", "admin", "admin");
+                    sim.GetAuthToken("http://sim.proxicon.co.za","/token", "admin", "admin");
 
                     // post gps data
-                    Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", 443, \"/simdata\", \"application/json\", gpsData, token);");
-                    sim.Post("http://sim.proxicon.co.za", "/simdata", "application/json", gpsData, token);
+                    Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", \"/simdata\", \"application/json\", gpsData, token);");
+                    sim.Post("http://sim.proxicon.co.za", "/simdata", "application/json", gpsData);
+
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine("Error posting GPS data: " + ex.Message);
                 }
             }
+        }
+
+        public static void PrintMemoryInfo()
+        {
+            NativeMemory.GetMemoryInfo(
+                NativeMemory.MemoryType.Internal,
+                out var totalSize,
+                out var freeSize,
+                out var largestFreeBlock);
+
+            var usedPercentage = (totalSize - freeSize) * 100 / totalSize;
+            Debug.WriteLine($"Total memory: {totalSize}, Free memory: {freeSize}, Largest free block: {largestFreeBlock}, Used percentage: {usedPercentage}%");
         }
 
         private static void Port_DataReceived(object sender, SerialDataReceivedEventArgs e)

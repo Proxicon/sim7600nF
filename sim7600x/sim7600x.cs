@@ -16,7 +16,6 @@ namespace sim7600x
     {
         private readonly SerialPort _serial;
         private readonly StringBuilder _resultBuffer = new StringBuilder();
-        private readonly StringBuilder _resultBufferPostReturn = new StringBuilder();
         private readonly AutoResetEvent _serialDataFinished = new AutoResetEvent(false);
         private string _lastResult = "";
         private string _lastResultPostReturn = "";
@@ -44,6 +43,8 @@ namespace sim7600x
         private readonly GpioPin _SD_SCLK;       //Pin 14
         private readonly GpioPin _SD_CS;         //Pin 13
 
+        // API Auth
+        private string _authToken;
 
         // public int pwkkey;
         // public int rstkey;
@@ -294,42 +295,6 @@ namespace sim7600x
 
                     _serialDataFinished.Set();
                 }
-
-                // Check if the buffer contains a complete response for http post reads
-                
-                if (_resultBuffer.ToString().Contains("+HTTPREAD: DATA"))
-                {
-
-                    // Check if we've run the _resultBuffer.ToString() method 5 times
-                    if (_returnBufferCounter >= 2)
-                    {
-                        // Extract the response data from the buffer
-                        _resultBufferPostReturn.Append(_resultBuffer); //.Substring(_resultBuffer.ToString().IndexOf("\n") + 1);
-
-                        // Clear the buffer
-                        // _resultBufferPostReturn.Clear();
-
-                        // Clear the counter
-                        _returnBufferCounter = 0;
-                    }
-                    else
-                    {
-
-                        // Print the response to the console (for debugging purposes)
-                        Debug.WriteLine($"Return Header Counter={_returnBufferCounter}");
-                        Debug.WriteLine(_resultBufferPostReturn.ToString());
-
-                        // Update return
-                        _lastResultPostReturn = _resultBufferPostReturn.ToString();
-
-                        _returnBufferCounter++;
-                    }
-
-
-                    // You can now process the response data as needed
-                    // For example, you could parse the JSON data or extract certain fields from the response
-                }
-
             }
         }
 
@@ -388,7 +353,7 @@ namespace sim7600x
         /// <param name="command">The AT command to send.</param>
         /// <param name="waitForResponse">A value indicating whether to wait for a response.</param>
         /// <param name="timeout">The maximum amount of time to wait for a response (in milliseconds).</param>
-        public void SendCommand(string command, bool waitForResponse = false, int timeout = 1000)
+        public void SendCommand(string command, bool waitForResponse = false, int timeout = 100)
         {
             // Log the command being sent to the device
             Debug.WriteLine($"AT+Comm = [{command}]");
@@ -1334,11 +1299,15 @@ namespace sim7600x
             }
         }
 
-        public string Post(string host, string page, string contentType, string data, string authToken = null)
+        public string Post(string host, string page, string contentType, string data)
         {
             var connectAttempts = 1;
             var errorOccurred = false;
-            var jsontoken = ""; 
+            var jsontoken = "";
+
+            // Close previous HTTP connection
+            SendCommand("AT+HTTPTERM\r", true);
+            _serialDataFinished.WaitOne(1000, false);
 
             // Close HTTP connection
             SendCommand("AT+HTTPINIT\r", true);
@@ -1346,10 +1315,10 @@ namespace sim7600x
             SendCommand($"AT+HTTPPARA=\"URL\",\"{host}{page}\"\r", true);
             SendCommand($"AT+HTTPPARA=\"CONTENT\",\"{contentType}\"\r", true);
 
-            // Add this line to include the Authorization header if authToken is provided
-            if (!string.IsNullOrEmpty(authToken))
+            // Add the Authorization header if the auth token has been previously set
+            if (!string.IsNullOrEmpty(_authToken))
             {
-                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + authToken + "\"\r\n");
+                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + _authToken + "\"\r\n");
             }
 
             // Prepare data
@@ -1378,29 +1347,47 @@ namespace sim7600x
                     // AT+HTTPHEAD Read the HTTP(S) Header Information of Server Response
                     SendCommand("AT+HTTPHEAD\r", true);
 
-                    // get data len
-                    SendCommand("AT+HTTPREAD?\r", true);
-                    _serialDataFinished.WaitOne(1000, false);
+                    // Get data length
+                    SendCommand("AT+HTTPREAD?\r", true, 1000);
 
-                    // Read response data
-                    SendCommand("AT+HTTPREAD=0,1024\r", true);
-                    _serialDataFinished.WaitOne(5000, false);
+                    // Get the len int value
+                    int index = _lastResult.IndexOf("LEN,") + 4;
+                    int endIndex = _lastResult.IndexOf("\r", index);
+                    string lenStr = _lastResult.Substring(index, endIndex - index);
+                    int length;
 
-                    Debug.WriteLine("Final second stringbuilder data:");
-                    Debug.WriteLine(_resultBufferPostReturn.ToString());
+                    if (int.TryParse(lenStr, out length))
+                    {
+                        // Read response data using the length
+                        SendCommand($"AT+HTTPREAD=0,{length}\r", true, 5000);
+                    }
 
-                    jsontoken = _resultBufferPostReturn.ToString();
-                    _resultBufferPostReturn.Clear();
+                    // Retrieve the token val if not already set
+                    if (string.IsNullOrEmpty(_authToken))
+                    {
+                        // Find the position of the first occurrence of the "token" substring
+                        int start = _lastResult.IndexOf("\"token\":");
 
+                        // If "token" is found, find the position of the first double quote after it
+                        if (start >= 0)
+                        {
+                            int end = _lastResult.IndexOf('"', start + 9);
+
+                            // If the ending double quote is found, extract the substring between the two double quotes
+                            if (end > start)
+                            {
+                                string token = _lastResult.Substring(start + 9, end - start - 9);
+                                _authToken = token;
+                                Debug.WriteLine($"We got Token: {token}");
+                            }
+                        }
+                    }
+
+                    // TODO: Better error handling, this is old and not very effective.
                     if (_lastResult.IndexOf("ERROR") > 0)
                     {
                         HandleFailure();
-
                         Get(host, page, contentType, data);
-                    }else
-                    {
-                        byte[] jsonBytes = Encoding.UTF8.GetBytes(jsontoken);
-                        object jsonObject = JsonSerializer.SerializeObject(jsonBytes);
                     }
 
                     // Close HTTP connection
@@ -1420,26 +1407,16 @@ namespace sim7600x
                 Post(host, page, contentType, data);
             }
 
-            return jsontoken;
+            return _lastResult.ToString();
         }
 
-        public string GetAuthToken(string host, string endpoint, string username, string password)
+        public void GetAuthToken(string host, string endpoint, string username, string password)
         {
-            string token = string.Empty;
-
+            // Create jsondata
             string postData = "{\"username\": \"" + username + "\", \"password\": \"" + password + "\"}";
 
-            // Replace the existing Post method call with the modified version
-            string response = Post(host, endpoint, "application/json", postData);
-
-            // Use a simple JSON parser or regex to extract the token from the response
-            Match match = Regex.Match(response, "\\\"token\\\":\\s*\\\"([^\"]+)\\\"");
-            if (match.Success)
-            {
-                token = match.Groups[1].Value;
-            }
-
-            return token;
+            // Post
+            Post(host, endpoint, "application/json", postData);
         }
 
         private void HandleFailure()
