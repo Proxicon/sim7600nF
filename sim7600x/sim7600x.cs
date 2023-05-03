@@ -4,11 +4,7 @@ using System.Text;
 using System.Diagnostics;
 using System.Device.Gpio;
 using System.Threading;
-using nanoFramework.Runtime.Events;
-using TinyGPSPlusNF;
 using System.Text.RegularExpressions;
-using System.Collections;
-using nanoFramework.Json;
 
 namespace sim7600x
 {
@@ -23,8 +19,6 @@ namespace sim7600x
         private int _failures = 0;
         private int _returnBufferCounter = 0;
         private bool _isConnected = false;
-
-        private static TinyGPSPlus s_gps;
 
         // GPIO init
         //private readonly GpioPin _batteryStatus; // Pin 35 for battery status, only works when not on USB aka, running on battery
@@ -75,10 +69,6 @@ namespace sim7600x
                 _MODEM_FLIGHT.Write(PinValue.High);
             }
 
-
-            // Create TinyGPS
-            //TinyGPSPlus gps = new();
-
             // Create serial hardware interface & attach event handler
             _serial = new SerialPort(portName, 115200, Parity.None, 8, StopBits.One);
             _serial.Handshake = Handshake.RequestToSend;
@@ -86,7 +76,6 @@ namespace sim7600x
             _serial.DataReceived += SerialOnDataReceived;
 
             _serial.Open();
-
 
             // check automatice time & timezome update setting
             AutomaticTimeandTimezoneUpdate();
@@ -1524,6 +1513,7 @@ namespace sim7600x
             SendEndOfDataCommand();
         }
 
+        /* Temporary removed, not in use until rest posting works 100%
         private void GpsDataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             if (_serial.BytesToRead == 0)
@@ -1591,6 +1581,6 @@ namespace sim7600x
 
             return sb.ToString();
         }
-
+        */
     }
 }
