@@ -55,9 +55,6 @@
     <Reference Include="System.Text.RegularExpressions">
       <HintPath>..\NFApp1\packages\nanoFramework.System.Text.RegularExpressions.1.1.37\lib\System.Text.RegularExpressions.dll</HintPath>
     </Reference>
-    <Reference Include="TinyGPSPlusNF">
-      <HintPath>..\NFApp1\packages\TinyGPSPlusNF.1.0.2\lib\TinyGPSPlusNF.dll</HintPath>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
