@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using nanoFramework.Hardware.Esp32;
 using sim7600x;
+using System.Device.Adc;
 
 namespace Sim7600_Test
 {
@@ -17,28 +18,17 @@ namespace Sim7600_Test
         private static int MODEM_FLIGHT = 25;
         // private static int MODEM_STATUS = 34;
 
-
-        /* APM Specific
-            Source1: https://sabroadband.co.za/mtn-lte-apn-settings/
-            Name: MTN Internet
-            APN: internet
-            Username: guest
-            Password:  Not Set
-
-            Source2: 
-            APN: internet 
-            Username: guest 
-            Password: ( ) 
-            Read more: https://briefly.co.za/43137-mtn-apn-settings-south-africa-internet-settings-apn-settings-south-africa.html
-
-         */
-
-        private static string APN = "myMTN"; // "Internet";
+        // APN details
+        private static string APN = "myMTN";
         private static string APNUser = "";
         private static string APNPass = "";
 
-        // API Auth
-        private string _authToken;
+        // Battery monitoring
+        // Create an ADC object to read the voltage ADC1 channel 1 is pin 35 on ESP32
+        // private static AdcController adc1;
+
+        private static AdcController adc1 = new AdcController();
+        private static AdcChannel channel0 = adc1.OpenChannel(0);
 
         public static void Main()
         {
@@ -56,9 +46,7 @@ namespace Sim7600_Test
             // Init modem
             var sim = new sim7600(APN, APNUser, APNPass, "COM2", MODEM_PWRKEY, MODEM_FLIGHT, LED);
 
-            // sim.ResetModule();
             sim.InitializeModem();
-            // sim.GprsConnect(APN, APNPass, APNUser); 
 
             // if AT response fails 5x, sim chip will be restarted & retried
             Debug.WriteLine("At Commands - restarts chip if no response x5");
@@ -108,37 +96,52 @@ namespace Sim7600_Test
                 Debug.WriteLine("Calling: sim.GetGPSFixedPositionInformation(); sleep 3000");
                 string gpsData = sim.GetGPSFixedPositionInformation();
 
-                /* This breaks???
-                string jsonData = JsonSerializer.SerializeObject(new
-                {
-                    Latitude = gpsDataArray[0],
-                    NS = gpsDataArray[1],
-                    Longitude = gpsDataArray[2],
-                    EW = gpsDataArray[3],
-                    Date = gpsDataArray[4],
-                    UTCTime = gpsDataArray[5],
-                    Altitude = gpsDataArray[6],
-                    Speed = gpsDataArray[7],
-                    Course = gpsDataArray[8]
-                });
-                */
-
                 try
                 {
                     PrintMemoryInfo();
 
-                    // get auth token
-                    Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
-                    sim.GetAuthToken("http://sim.proxicon.co.za","/token", "admin", "admin");
+                    // Check if the sim context have an active token.
+                    string authToken = sim.AuthToken;
 
-                    // post gps data
-                    Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", \"/simdata\", \"application/json\", gpsData, token);");
-                    sim.Post("http://sim.proxicon.co.za", "/simdata", "application/json", gpsData);
+                    if (string.IsNullOrEmpty(authToken))
+                    {
+                        // Get initial auth token
+                        Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
+                        sim.GetAuthToken("http://sim.proxicon.co.za", "/token", "admin", "admin");
 
+                    }
+                    else
+                    {
+                        // Use the authToken & post GPS data
+                        Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", \"/simlogs\", \"application/json\", simlogs);");
+
+                        string simlogs = $"{{\"id\":0,\"device\":\"Esp32DEV00\",\"logitem\":\"GPSData\",\"message\":\"{gpsData}\"}}";
+                        Debug.WriteLine($"simlogs: {simlogs}");
+
+                        // Exclude empty datasets
+                        if (!string.IsNullOrEmpty(gpsData) && gpsData != ",,,,,,,,")
+                        {
+                            sim.Post("http://sim.proxicon.co.za", "/simlogs", "application/json", simlogs);
+                        }
+
+                        // Monitor battery %
+                        //int batteryPercentage = GetBatteryPercentage();
+                        //Debug.WriteLine($"Battery percentage: {batteryPercentage}%");
+
+                    }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine("Error posting GPS data: " + ex.Message);
+
+                    Debug.WriteLine("Closing HTTP Connection..");
+
+                    // Close previous HTTP connection on failures
+                    sim.SendCommand("AT+HTTPTERM\r", true);
+
+                    // Null Auth Token
+                    sim.AuthToken = null;
+
                 }
             }
         }
@@ -153,6 +156,25 @@ namespace Sim7600_Test
 
             var usedPercentage = (totalSize - freeSize) * 100 / totalSize;
             Debug.WriteLine($"Total memory: {totalSize}, Free memory: {freeSize}, Largest free block: {largestFreeBlock}, Used percentage: {usedPercentage}%");
+        }
+
+        public int GetBatteryPercentage()
+        {
+            // Read the raw voltage value from the ADC channel
+            int rawVoltage = channel0.ReadValue();
+
+            // Get the maximum and minimum raw values from the ADC controller
+            int maxRawValue = adc1.MaxValue;
+            int minRawValue = adc1.MinValue;
+
+            // Battery % Calculation
+            // Convert the raw voltage value to a voltage level in volts
+            double voltage = (rawVoltage * 3.3) / maxRawValue;
+
+            // Calculate the battery percentage based on the voltage level
+            int batteryPercentage = (int)((voltage - 3.0) / (4.2 - 3.0) * 100);
+
+            return batteryPercentage;
         }
     }
 }

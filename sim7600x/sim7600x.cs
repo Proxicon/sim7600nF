@@ -39,6 +39,11 @@ namespace sim7600x
 
         // API Auth
         private string _authToken;
+        public string AuthToken
+        {
+            get { return _authToken; }
+            set { _authToken = value; }
+        }
 
         // public int pwkkey;
         // public int rstkey;
@@ -1298,7 +1303,6 @@ namespace sim7600x
             SendCommand("AT+HTTPTERM\r", true);
             _serialDataFinished.WaitOne(1000, false);
 
-            // Close HTTP connection
             SendCommand("AT+HTTPINIT\r", true);
             SendCommand("AT+HTTPPARA=\"CID\",1\r", true);
             SendCommand($"AT+HTTPPARA=\"URL\",\"{host}{page}\"\r", true);
@@ -1307,7 +1311,7 @@ namespace sim7600x
             // Add the Authorization header if the auth token has been previously set
             if (!string.IsNullOrEmpty(_authToken))
             {
-                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + _authToken + "\"\r\n");
+                SendCommand("AT+HTTPPARA=\"USERDATA\",\"Authorization: Bearer " + _authToken + "\"\r\n", true, 1000);
             }
 
             // Prepare data
@@ -1336,10 +1340,17 @@ namespace sim7600x
                     // AT+HTTPHEAD Read the HTTP(S) Header Information of Server Response
                     SendCommand("AT+HTTPHEAD\r", true);
 
+                    // Extract the status code substring from the response
+                    string statusSubstring = _lastResult.Substring(_lastResult.IndexOf("HTTP/1.1 ") + 9, 3);
+
+                    // Parse the status code to an integer
+                    int statusCode = int.Parse(statusSubstring);
+                    Debug.WriteLine($"Status code: {statusCode}");
+
                     // Get data length
                     SendCommand("AT+HTTPREAD?\r", true, 1000);
 
-                    // Get the len int value
+                    // Set the len int value
                     int index = _lastResult.IndexOf("LEN,") + 4;
                     int endIndex = _lastResult.IndexOf("\r", index);
                     string lenStr = _lastResult.Substring(index, endIndex - index);
@@ -1347,6 +1358,15 @@ namespace sim7600x
 
                     if (int.TryParse(lenStr, out length))
                     {
+                        if (length == 0)
+                        {
+                            Debug.WriteLine("No data to retrieve");
+                            // Close HTTP connection
+                            SendCommand("AT+HTTPTERM\r", true);
+                            _serialDataFinished.WaitOne(1000, false);
+                            return _lastResult.ToString();
+                        }
+
                         // Read response data using the length
                         SendCommand($"AT+HTTPREAD=0,{length}\r", true, 5000);
                     }
@@ -1375,8 +1395,8 @@ namespace sim7600x
                     // TODO: Better error handling, this is old and not very effective.
                     if (_lastResult.IndexOf("ERROR") > 0)
                     {
-                        HandleFailure();
-                        Get(host, page, contentType, data);
+                        //HandleFailure();
+                        //Get(host, page, contentType, data);
                     }
 
                     // Close HTTP connection
@@ -1385,15 +1405,16 @@ namespace sim7600x
                 }
                 else
                 {
-                    HandleFailure();
-                    Post(host, page, contentType, data);
+                    //HandleFailure();
+                    //Post(host, page, contentType, data);
+                    Debug.WriteLine($"Non-Success: {_lastResult}");
                 }
             }
             else
             {
                 Debug.WriteLine("Error on open connection. Re-initializing.");
-                HandleFailure();
-                Post(host, page, contentType, data);
+                //HandleFailure();
+                //Post(host, page, contentType, data);
             }
 
             return _lastResult.ToString();
