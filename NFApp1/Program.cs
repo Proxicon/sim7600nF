@@ -23,13 +23,6 @@ namespace Sim7600_Test
         private static string APNUser = "";
         private static string APNPass = "";
 
-        // Battery monitoring
-        // Create an ADC object to read the voltage ADC1 channel 1 is pin 35 on ESP32
-        // private static AdcController adc1;
-
-        private static AdcController adc1 = new AdcController();
-        private static AdcChannel channel0 = adc1.OpenChannel(0);
-
         public static void Main()
         {
 
@@ -88,6 +81,26 @@ namespace Sim7600_Test
             // Start GPS Session
             sim.StartStopGpsSession(1);
 
+            // Battery monitoring
+            // Create an ADC object to read the voltage ADC1 channel 1 is pin 35 on ESP32
+
+            AdcController adcController1 = new AdcController();
+            AdcChannel adcChannel0 = adcController1.OpenChannel(0);
+
+            // Read the raw voltage value from the ADC channel
+            int rawVoltage = adcChannel0.ReadValue();
+
+            // Get the maximum and minimum raw values from the ADC controller
+            int maxRawValue = adcController1.MaxValue;
+            int minRawValue = adcController1.MinValue;
+
+            // Convert the raw voltage value to a voltage level in volts
+            double voltage = (rawVoltage * 3.3) / maxRawValue;
+
+            // Calculate the battery percentage based on the voltage level
+            int batteryPercentage = (int)((voltage - 3.0) / (4.2 - 3.0) * 100);
+            Debug.WriteLine($"Battery percentage: {batteryPercentage}% - maxRawValue:{maxRawValue} - minRawValue:{minRawValue} voltage:{voltage}");
+
             Debug.WriteLine("Starting main loop next... HTTP post tests.");
 
             // start main loop
@@ -108,7 +121,6 @@ namespace Sim7600_Test
                         // Get initial auth token
                         Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
                         sim.GetAuthToken("http://sim.proxicon.co.za", "/token", "admin", "admin");
-
                     }
                     else
                     {
@@ -124,10 +136,24 @@ namespace Sim7600_Test
                             sim.Post("http://sim.proxicon.co.za", "/simlogs", "application/json", simlogs);
                         }
 
-                        // Monitor battery %
-                        //int batteryPercentage = GetBatteryPercentage();
-                        //Debug.WriteLine($"Battery percentage: {batteryPercentage}%");
+                        /* Monitor battery %
+                           Read the raw voltage value from the ADC channel & post to API
+                           Note: Voltage should be 0 while plugged-in & charging & only produce a 
+                                 value when on battery
+                        */
 
+                        rawVoltage = adcChannel0.ReadValue();
+
+                        // Convert the raw voltage value to a voltage level in volts
+                        voltage = (rawVoltage * 3.3) / maxRawValue;
+
+                        // Calculate the battery percentage based on the voltage level
+                        batteryPercentage = (int)((voltage - 3.0) / (4.2 - 3.0) * 100);
+                        Debug.WriteLine($"Battery percentage: {batteryPercentage}%");
+
+                        simlogs = $"{{\"id\":0,\"device\":\"Esp32DEV00\",\"logitem\":\"Battery %\",\"message\":\"{batteryPercentage}\"}}";
+
+                        sim.Post("http://sim.proxicon.co.za", "/simlogs", "application/json", simlogs);
                     }
                 }
                 catch (Exception ex)
@@ -156,25 +182,6 @@ namespace Sim7600_Test
 
             var usedPercentage = (totalSize - freeSize) * 100 / totalSize;
             Debug.WriteLine($"Total memory: {totalSize}, Free memory: {freeSize}, Largest free block: {largestFreeBlock}, Used percentage: {usedPercentage}%");
-        }
-
-        public int GetBatteryPercentage()
-        {
-            // Read the raw voltage value from the ADC channel
-            int rawVoltage = channel0.ReadValue();
-
-            // Get the maximum and minimum raw values from the ADC controller
-            int maxRawValue = adc1.MaxValue;
-            int minRawValue = adc1.MinValue;
-
-            // Battery % Calculation
-            // Convert the raw voltage value to a voltage level in volts
-            double voltage = (rawVoltage * 3.3) / maxRawValue;
-
-            // Calculate the battery percentage based on the voltage level
-            int batteryPercentage = (int)((voltage - 3.0) / (4.2 - 3.0) * 100);
-
-            return batteryPercentage;
         }
     }
 }

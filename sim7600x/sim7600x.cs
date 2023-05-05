@@ -45,9 +45,18 @@ namespace sim7600x
             set { _authToken = value; }
         }
 
-        // public int pwkkey;
-        // public int rstkey;
-        // public int poweronkey;
+        /// <summary>
+        /// Represents a class for initiating and controlling the SIM7600 chip. Provides functionality for network connection,
+        /// settings configuration, SMS, data operations, and more. Initializes the modem power, checks network connection,
+        /// creates a serial hardware interface, and attaches an event handler to it.
+        /// </summary>
+        /// <param name="apn">The Access Point Name (APN) of the cellular network.</param>
+        /// <param name="gprsuser">The user name (if required) for GPRS authentication.</param>
+        /// <param name="gprspass">The password (if required) for GPRS authentication.</param>
+        /// <param name="portName">The name of the serial port to use for the hardware interface.</param>
+        /// <param name="pwkkey">The pin number for the modem power key.</param>
+        /// <param name="flight">The pin number for the GPS flight mode.</param>
+        /// <param name="ledpin">The pin number for the LED.</param>
         public sim7600(string apn, string gprsuser, string gprspass, string portName, int pwkkey, int flight, int ledpin)
         {
             _apn = apn;
@@ -1351,9 +1360,20 @@ namespace sim7600x
                     SendCommand("AT+HTTPREAD?\r", true, 1000);
 
                     // Set the len int value
-                    int index = _lastResult.IndexOf("LEN,") + 4;
-                    int endIndex = _lastResult.IndexOf("\r", index);
-                    string lenStr = _lastResult.Substring(index, endIndex - index);
+                    string lenStr;
+                    int index = _lastResult.IndexOf("+HTTPREAD: LEN,") + 15;
+
+                    if (index >= 15)
+                    {
+                        int endIndex = _lastResult.IndexOf("\r", index);
+                        lenStr = _lastResult.Substring(index, endIndex - index);
+                    }
+                    else
+                    {
+                        // Handle the case where "+HTTPREAD: LEN," was not found
+                        lenStr = "0";
+                    }
+
                     int length;
 
                     if (int.TryParse(lenStr, out length))
@@ -1392,29 +1412,10 @@ namespace sim7600x
                         }
                     }
 
-                    // TODO: Better error handling, this is old and not very effective.
-                    if (_lastResult.IndexOf("ERROR") > 0)
-                    {
-                        //HandleFailure();
-                        //Get(host, page, contentType, data);
-                    }
-
                     // Close HTTP connection
                     SendCommand("AT+HTTPTERM\r", true);
                     _serialDataFinished.WaitOne(1000, false);
                 }
-                else
-                {
-                    //HandleFailure();
-                    //Post(host, page, contentType, data);
-                    Debug.WriteLine($"Non-Success: {_lastResult}");
-                }
-            }
-            else
-            {
-                Debug.WriteLine("Error on open connection. Re-initializing.");
-                //HandleFailure();
-                //Post(host, page, contentType, data);
             }
 
             return _lastResult.ToString();
