@@ -23,6 +23,11 @@ namespace Sim7600_Test
         private static string APNUser = "";
         private static string APNPass = "";
 
+        // API URL & Auth
+        private static string APIUser = "user";
+        private static string APIPassword = "password";
+        private static string APIUri = "uri";
+
         public static void Main()
         {
 
@@ -109,6 +114,12 @@ namespace Sim7600_Test
                 Debug.WriteLine("Calling: sim.GetGPSFixedPositionInformation(); sleep 3000");
                 string gpsData = sim.GetGPSFixedPositionInformation();
 
+                /*
+                 GPS NMEA String retrieval testing 
+                 */
+                //Debug.WriteLine("Calling: sim.GetNMEAGPSFixedPositionInformation(); sleep 3000");
+                //string gpsData = sim.GetNMEAGPSFixedPositionInformation(31);
+
                 try
                 {
                     PrintMemoryInfo();
@@ -119,21 +130,21 @@ namespace Sim7600_Test
                     if (string.IsNullOrEmpty(authToken))
                     {
                         // Get initial auth token
-                        Debug.WriteLine("Calling: sim.GetAuthToken(\"sim.proxicon.co.za\", \"/token\", \"admin\", \"admin\")");
-                        sim.GetAuthToken("http://sim.proxicon.co.za", "/token", "admin", "admin");
+                        Debug.WriteLine($"Calling: sim.GetAuthToken(\"{APIUri}\", \"/token\", \"{APIUser}\", \"{APIPassword}\")");
+                        sim.GetAuthToken(APIUri, "/token", APIUser, APIPassword);
                     }
                     else
                     {
                         // Use the authToken & post GPS data
-                        Debug.WriteLine("Calling: sim.Post(\"sim.proxicon.co.za\", \"/simlogs\", \"application/json\", simlogs);");
+                        Debug.WriteLine($"Calling: sim.Post(\"{APIUri}\", \"/simdata\", \"application/json\", simdata);");
 
-                        string simlogs = $"{{\"id\":0,\"device\":\"Esp32DEV00\",\"logitem\":\"GPSData\",\"message\":\"{gpsData}\"}}";
+                        string simlogs = $"{{\"device\":\"Esp32DEV00\",\"location\":\"{gpsData}\"}}";
                         Debug.WriteLine($"simlogs: {simlogs}");
 
                         // Exclude empty datasets
                         if (!string.IsNullOrEmpty(gpsData) && gpsData != ",,,,,,,,")
                         {
-                            sim.Post("http://sim.proxicon.co.za", "/simlogs", "application/json", simlogs);
+                            sim.Post(APIUri, "/simdata", "application/json", simlogs);
                         }
 
                         /* Monitor battery %
@@ -153,7 +164,7 @@ namespace Sim7600_Test
 
                         simlogs = $"{{\"id\":0,\"device\":\"Esp32DEV00\",\"logitem\":\"Battery %\",\"message\":\"{batteryPercentage}\"}}";
 
-                        sim.Post("http://sim.proxicon.co.za", "/simlogs", "application/json", simlogs);
+                        sim.Post(APIUri, "/simlogs", "application/json", simlogs);
                     }
                 }
                 catch (Exception ex)
