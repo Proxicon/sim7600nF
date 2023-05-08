@@ -542,6 +542,41 @@ namespace sim7600x
             return response;
         }
 
+        public string GetNMEAGPSFixedPositionInformation(int nmeaConfig)
+        {
+            Debug.WriteLine("----------------(GetNMEAGPSFixedPositionInformation)----------------");
+            SendCommand("AT+CGPSNMEA?\r", true);
+            SendEndOfDataCommand();
+
+            string response = null;
+            var match = Regex.Match(_lastResult, @"\+CGPSNMEA: (.+)");
+            if (match.Success)
+            {
+                response = match.Groups[1].Value;
+                Debug.WriteLine("Current NMEA configuration: " + response);
+            }
+
+            Debug.WriteLine($"Set NMEA configuration to {nmeaConfig}");
+            SendCommand($"AT+CGPSNMEA={nmeaConfig}\r", true);
+            SendEndOfDataCommand();
+
+            SendCommand("AT+CGPSINFO\r", true);
+            SendEndOfDataCommand();
+
+            match = Regex.Match(_lastResult, @"\+CGPSINFO: (.+)");
+            if (match.Success)
+            {
+                response = match.Groups[1].Value;
+                Debug.WriteLine("The _lastResult response was: " + response);
+            }
+            else
+            {
+                Debug.WriteLine("Failed to retrieve GPS information.");
+            }
+
+            return response;
+        }
+
 
         public void QuerySignalQuality()
         {
